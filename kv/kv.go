@@ -1,58 +1,28 @@
 package kv
 
-import "errors"
-
-var (
-	ErrKeyAlreadyPresent = errors.New("key already present into the database")
-	ErrKeyNotFound       = errors.New("key not found in the database")
-)
-
 type KV interface {
-	Set(key string, data []byte) error
-	Get(key string) ([]byte, error)
-	Delete(key string) error
+	Set(key []byte, data []byte) 
+	Get(key []byte) ([]byte, error)
+	Del(key []byte) 
 }
 
 type Iterator interface {
-   HasNext() bool
-   Next() (key []byte, val []byte)
+	HasNext() bool
+	Next() (key []byte, val []byte)
 }
 
-type MemDB struct {
-	data map[string][]byte
-}
+type MemDB struct {}
 
 func New() MemDB {
-	return MemDB{
-		data: make(map[string][]byte), 
-	}
+	return MemDB{}
 }
 
 var _ KV = (*MemDB)(nil)
 
-func (m MemDB) Set(key string, data []byte) error {
-	if _, ok := m.data[key]; ok {
-		return ErrKeyAlreadyPresent
-	}
+func (m MemDB) Set(key []byte, data []byte) {}
 
-	m.data[key] = data
-	return nil
+func (m MemDB) Get(key []byte) ([]byte, error) {
+	return []byte{}, nil
 }
 
-func (m MemDB) Get(key string) ([]byte, error) {
-	b, ok := m.data[key]
-	if !ok {
-		return []byte{}, ErrKeyNotFound
-	}
-
-	return b, nil
-}
-
-func (m MemDB) Delete(key string) error {
-	if _, ok := m.data[key]; !ok {
-		return ErrKeyNotFound
-	}
-
-	delete(m.data, key)
-	return nil
-}
+func (m MemDB) Del(key []byte) {}
