@@ -11,18 +11,18 @@ type Iterator interface {
 	Next() (key []byte, val []byte)
 }
 
-type MemDB struct {}
+type DB struct {}
 
-func New() MemDB {
-	return MemDB{}
+func New() DB {
+	return DB{}
 }
 
-var _ KV = (*MemDB)(nil)
+var _ KV = (*DB)(nil)
 
-func (m MemDB) Set(key []byte, data []byte) {}
+func (m DB) Set(key []byte, data []byte) {}
 
-func (m MemDB) Get(key []byte) ([]byte, error) {
+func (m DB) Get(key []byte) ([]byte, error) {
 	return []byte{}, nil
 }
 
-func (m MemDB) Del(key []byte) {}
+func (m DB) Del(key []byte) {}
