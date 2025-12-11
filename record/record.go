@@ -7,12 +7,15 @@ package record
 //     ValueSize (uint32)
 //     Key   (bytes...)
 //     Value (bytes...)
-
 type Record struct {
 	Key       []byte
 	Value     []byte
 	Timestamp int64
 }
 
-func (r Record) Encode() {}
-func (r Record) Decode() {}
+func Encode(rec Record) []byte {
+	return []byte{}
+}
+func Decode(b []byte) Record {
+	return Record{}
+}
