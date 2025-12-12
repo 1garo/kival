@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+
+	"github.com/1garo/kival/kv"
 )
 
 func SaveData2(path string, data []byte) (err error) {
@@ -56,10 +58,32 @@ func SaveData1(path string, data []byte) error {
 }
 
 func main() {
-	file := "hello.txt"
-	if err := SaveData2(file, []byte("hello world!!!!!")); err != nil {
-		log.Fatalf("failed to save data to file: %v", err)
-	}
+    store, err := kv.OpenStore("./data")
+    if err != nil {
+        log.Fatalf("failed to open store: %v", err)
+    }
 
-	log.Printf("successfully written data to file: %s\n", file)
+    fmt.Println("Store loaded.")
+
+    // Write some values
+    if err := store.Set("name", []byte("alex")); err != nil {
+        log.Fatal(err)
+    }
+
+    if err := store.Set("lang", []byte("golang")); err != nil {
+        log.Fatal(err)
+    }
+
+    // Read them back
+    val, err := store.Get("name")
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println("name:", string(val))
+
+    val, err = store.Get("lang")
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println("lang:", string(val))
 }

@@ -2,10 +2,9 @@ package kv
 
 import (
 	"errors"
-	"time"
+	"os"
 
 	"github.com/1garo/kival/log"
-	"github.com/1garo/kival/record"
 )
 
 var (
@@ -24,15 +23,32 @@ type kv struct {
 	logs      map[uint32]log.Log
 }
 
-func OpenStore(dir string) *kv {
-	// 1: scan dir for segment files
-	// 2: extract IDs
-	// 3: sort IDs
-	// 4: for each ID → NewLogFile()
-	// 5: activeLog = highest-ID file
-	// 6: rebuild index by scanning logs
-	return &kv{}
+// TODO: I need to undertand what this is doing
+func OpenStore(path string) (*kv, error) {
+    // 1. ensure directory exists
+    if err := os.MkdirAll(path, 0755); err != nil {
+        return nil, err
+    }
+
+    // 2. open active log file
+    lf, err := log.New(1, path) // we’ll improve file ID later
+    if err != nil {
+        return nil, err
+    }
+
+    // 3. build index by scanning
+    index, err := log.BuildIndex(lf)
+    if err != nil {
+        return nil, err
+    }
+
+    return &kv{
+    	activeLog: lf,
+    	index:     index,
+    	logs:      map[uint32]log.Log{},
+    }, nil
 }
+   
 
 var _ KV = (*kv)(nil)
 
@@ -45,19 +61,14 @@ func New(l log.Log) kv {
 }
 
 func (m kv) Set(key string, data []byte) error {
-	rec := record.Record{
-		Key:       []byte(key),
-		Value:     data,
-		Timestamp: time.Now().Unix(),
-	}
-	offset, err := m.activeLog.Append(record.Encode(rec))
+	//rec := record.Record{
+	//	Key:       []byte(key),
+	//	Value:     data,
+	//	Timestamp: time.Now().Unix(),
+	//}
+	pos, err := m.activeLog.Append([]byte(key), data)
 	if err != nil {
 		return errors.New("cannot append encoded data into db")
-	}
-
-	pos := log.LogPosition{
-		FileID: m.activeLog.ID(),
-		Offset: offset,
 	}
 
 	m.index[key] = pos
@@ -70,14 +81,7 @@ func (m kv) Get(key string) ([]byte, error) {
 		return nil, ErrNotFound
 	}
 
-	raw, err := m.logs[pos.FileID].Read(pos.Offset)
-	if err != nil {
-		return nil, errors.New("failed to read offset from file")
-	}
-
-	rec := record.Decode(raw)
-
-	return rec.Value, nil
+	return m.activeLog.ReadAt(pos) 
 }
 
 func (m kv) Del(key string) {}
