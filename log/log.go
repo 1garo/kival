@@ -8,6 +8,10 @@ import (
 	"path/filepath"
 )
 
+const (
+	HeaderSize = 8
+)
+
 type Log interface {
 	Append(key, val []byte) (pos LogPosition, err error)
 	Read(offset int64) ([]byte, error)
@@ -30,7 +34,6 @@ type logFile struct {
 	writePos int64 // where the next Write should happen
 }
 
-// TODO: I need to undertand what this is doing
 func BuildIndex(lf *logFile) (map[string]LogPosition, error) {
 	idx := make(map[string]LogPosition)
 	offset := int64(0)
@@ -43,8 +46,7 @@ func BuildIndex(lf *logFile) (map[string]LogPosition, error) {
 	size := stat.Size()
 
 	for offset < size {
-		// Read header
-		header := make([]byte, 8)
+		header := make([]byte, HeaderSize)
 		_, err := f.ReadAt(header, offset)
 		if err != nil {
 			return nil, err
@@ -54,7 +56,7 @@ func BuildIndex(lf *logFile) (map[string]LogPosition, error) {
 		valLen := binary.LittleEndian.Uint32(header[4:8])
 
 		entryStart := offset
-		offset += 8
+		offset += HeaderSize
 
 		key := make([]byte, keyLen)
 		_, err = f.ReadAt(key, offset)

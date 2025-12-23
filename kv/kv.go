@@ -23,32 +23,30 @@ type kv struct {
 	logs      map[uint32]log.Log
 }
 
-// TODO: I need to undertand what this is doing
 func OpenStore(path string) (*kv, error) {
-    // 1. ensure directory exists
-    if err := os.MkdirAll(path, 0755); err != nil {
-        return nil, err
-    }
+	// 1. ensure directory exists
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return nil, err
+	}
 
-    // 2. open active log file
-    lf, err := log.New(1, path) // we’ll improve file ID later
-    if err != nil {
-        return nil, err
-    }
+	// 2. open active log file
+	lf, err := log.New(1, path) // we’ll improve file ID later
+	if err != nil {
+		return nil, err
+	}
 
-    // 3. build index by scanning
-    index, err := log.BuildIndex(lf)
-    if err != nil {
-        return nil, err
-    }
+	// 3. build index by scanning
+	index, err := log.BuildIndex(lf)
+	if err != nil {
+		return nil, err
+	}
 
-    return &kv{
-    	activeLog: lf,
-    	index:     index,
-    	logs:      map[uint32]log.Log{},
-    }, nil
+	return &kv{
+		activeLog: lf,
+		index:     index,
+		logs:      make(map[uint32]log.Log, 0),
+	}, nil
 }
-   
 
 var _ KV = (*kv)(nil)
 
@@ -81,7 +79,7 @@ func (m kv) Get(key string) ([]byte, error) {
 		return nil, ErrNotFound
 	}
 
-	return m.activeLog.ReadAt(pos) 
+	return m.activeLog.ReadAt(pos)
 }
 
 func (m kv) Del(key string) {}
