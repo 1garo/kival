@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	HeaderSize = 8
+	HeaderSize = 12
 )
 
 type Log interface {
@@ -110,7 +110,7 @@ func New(id uint32, dir string) (*logFile, error) {
 func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 	start := d.writePos
 
-	header := make([]byte, 8)
+	header := make([]byte, HeaderSize)
 	binary.LittleEndian.PutUint32(header[0:4], uint32(len(key)))
 	binary.LittleEndian.PutUint32(header[4:8], uint32(len(val)))
 
