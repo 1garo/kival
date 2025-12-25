@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/1garo/kival/record"
 )
 
 const (
@@ -52,8 +54,9 @@ func BuildIndex(lf *logFile) (map[string]LogPosition, error) {
 			return nil, err
 		}
 
-		keyLen := binary.LittleEndian.Uint32(header[0:4])
-		valLen := binary.LittleEndian.Uint32(header[4:8])
+		_ = binary.LittleEndian.Uint32(header[0:4])
+		keyLen := binary.LittleEndian.Uint32(header[4:8])
+		valLen := binary.LittleEndian.Uint32(header[8:12])
 
 		entryStart := offset
 		offset += HeaderSize
@@ -111,8 +114,13 @@ func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 	start := d.writePos
 
 	header := make([]byte, HeaderSize)
-	binary.LittleEndian.PutUint32(header[0:4], uint32(len(key)))
-	binary.LittleEndian.PutUint32(header[4:8], uint32(len(val)))
+	keyLen := uint32(len(key))
+	valLen := uint32(len(val))
+
+	crc := record.GenerateCRC(keyLen, valLen, key, val)
+	binary.LittleEndian.PutUint32(header[0:4], crc)
+	binary.LittleEndian.PutUint32(header[4:8], keyLen)
+	binary.LittleEndian.PutUint32(header[8:12], valLen)
 
 	offset := start
 
@@ -146,25 +154,12 @@ func (d *logFile) Read(offset int64) ([]byte, error) {
 }
 
 func (d *logFile) ReadAt(pos LogPosition) ([]byte, error) {
-	offset := pos.Offset
-
-	header := make([]byte, 8)
-	if _, err := d.file.ReadAt(header, offset); err != nil {
-		return nil, err
+	rec, err := record.Decode(d.file, pos.Offset)
+	if err != nil {
+		return []byte{}, err
 	}
 
-	keyLen := binary.LittleEndian.Uint32(header[0:4])
-	valueLen := binary.LittleEndian.Uint32(header[4:8])
-
-	// skip the key — for Get we only want the value
-	offset += 8 + int64(keyLen)
-
-	val := make([]byte, valueLen)
-	if _, err := d.file.ReadAt(val, offset); err != nil {
-		return nil, err
-	}
-
-	return val, nil
+	return rec.Value, nil
 }
 
 func (d *logFile) Size() int64 {

@@ -73,6 +73,9 @@ func main() {
 	if err := store.Set("lang", []byte("golang")); err != nil {
 		log.Fatal(err)
 	}
+	if err := store.Set("surname", []byte("vardai")); err != nil {
+		log.Fatal(err)
+	}
 
 	// Read them back
 	val, err := store.Get("name")
@@ -86,4 +89,10 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Println("lang:", string(val))
+
+	val, err = store.Get("surname")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("surname:", string(val))
 }
