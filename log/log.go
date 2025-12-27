@@ -113,6 +113,7 @@ func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 
 	buf := record.Encode(key, val)
 
+	// we should us SaveData2 here instead
 	n, err := d.file.WriteAt(buf, start)
 	if err != nil {
 		return LogPosition{}, err
