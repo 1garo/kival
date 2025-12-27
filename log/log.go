@@ -16,7 +16,6 @@ const (
 
 type Log interface {
 	Append(key, val []byte) (pos LogPosition, err error)
-	Read(offset int64) ([]byte, error)
 	ReadAt(pos LogPosition) ([]byte, error)
 	Size() int64
 	ID() uint32
@@ -54,7 +53,6 @@ func BuildIndex(lf *logFile) (map[string]LogPosition, error) {
 			return nil, err
 		}
 
-		_ = binary.LittleEndian.Uint32(header[0:4])
 		keyLen := binary.LittleEndian.Uint32(header[4:8])
 		valLen := binary.LittleEndian.Uint32(header[8:12])
 
@@ -113,44 +111,19 @@ func New(id uint32, dir string) (*logFile, error) {
 func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 	start := d.writePos
 
-	header := make([]byte, HeaderSize)
-	keyLen := uint32(len(key))
-	valLen := uint32(len(val))
+	buf := record.Encode(key, val)
 
-	crc := record.GenerateCRC(keyLen, valLen, key, val)
-	binary.LittleEndian.PutUint32(header[0:4], crc)
-	binary.LittleEndian.PutUint32(header[4:8], keyLen)
-	binary.LittleEndian.PutUint32(header[8:12], valLen)
-
-	offset := start
-
-	n, err := d.file.WriteAt(header, offset)
+	n, err := d.file.WriteAt(buf, start)
 	if err != nil {
-		return LogPosition{}, nil
+		return LogPosition{}, err
 	}
 
-	offset += int64(n)
-	n, err = d.file.WriteAt(key, offset)
-	if err != nil {
-		return LogPosition{}, nil
-	}
-
-	offset += int64(n)
-	n, err = d.file.WriteAt(val, offset)
-	if err != nil {
-		return LogPosition{}, nil
-	}
-
-	d.writePos = offset + int64(n)
+	d.writePos = start + int64(n)
 
 	return LogPosition{
 		FileID: d.id,
 		Offset: start,
 	}, nil
-}
-
-func (d *logFile) Read(offset int64) ([]byte, error) {
-	return []byte{}, nil
 }
 
 func (d *logFile) ReadAt(pos LogPosition) ([]byte, error) {
