@@ -13,9 +13,9 @@ var (
 )
 
 type KV interface {
-	Set(key string, data []byte) error
-	Get(key string) ([]byte, error)
-	Del(key string)
+	Set(key []byte, data []byte) error
+	Get(key []byte) ([]byte, error)
+	Del(key []byte)
 }
 
 type kv struct {
@@ -45,37 +45,24 @@ func OpenStore(path string) (*kv, error) {
 	return &kv{
 		activeLog: lf,
 		index:     index,
-		logs:      make(map[uint32]log.Log, 0),
+		logs:      map[uint32]log.Log{},
 	}, nil
 }
 
 var _ KV = (*kv)(nil)
 
-func New(l log.Log) kv {
-	return kv{
-		activeLog: nil,
-		index:     map[string]log.LogPosition{},
-		logs:      map[uint32]log.Log{},
-	}
-}
-
-func (m kv) Set(key string, data []byte) error {
-	//rec := record.Record{
-	//	Key:       []byte(key),
-	//	Value:     data,
-	//	Timestamp: time.Now().Unix(),
-	//}
-	pos, err := m.activeLog.Append([]byte(key), data)
+func (m kv) Set(key []byte, data []byte) error {
+	pos, err := m.activeLog.Append(key, data)
 	if err != nil {
 		return fmt.Errorf("%w: cannot append encoded data into db", err)
 	}
 
-	m.index[key] = pos
+	m.index[string(key)] = pos
 	return nil
 }
 
-func (m kv) Get(key string) ([]byte, error) {
-	pos, ok := m.index[key]
+func (m kv) Get(key []byte) ([]byte, error) {
+	pos, ok := m.index[string(key)]
 	if !ok {
 		return nil, ErrNotFound
 	}
@@ -83,4 +70,4 @@ func (m kv) Get(key string) ([]byte, error) {
 	return m.activeLog.ReadAt(pos)
 }
 
-func (m kv) Del(key string) {}
+func (m kv) Del(key []byte) {}

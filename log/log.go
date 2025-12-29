@@ -6,12 +6,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/1garo/kival/record"
 )
 
 const (
-	HeaderSize = 12
+	HeaderSize = 16
 )
 
 type Log interface {
@@ -22,11 +23,20 @@ type Log interface {
 }
 
 // LogPosition
-//
-//	key -> LogPosition
 type LogPosition struct {
-	FileID uint32 // which segment file
-	Offset int64  // where the record starts inside that file
+	FileID    uint32 // which segment file
+	ValuePos  int64  // where the record starts inside that file
+	ValueSize uint32
+	timestamp uint32
+}
+
+func NewLogPosition(fileID, valueSize, timestamp uint32, valuePos int64) LogPosition {
+	return LogPosition{
+		FileID:    fileID,
+		ValuePos:  valuePos,
+		ValueSize: valueSize,
+		timestamp: timestamp,
+	}
 }
 
 type logFile struct {
@@ -53,8 +63,10 @@ func BuildIndex(lf *logFile) (map[string]LogPosition, error) {
 			return nil, err
 		}
 
-		keyLen := binary.LittleEndian.Uint32(header[4:8])
-		valLen := binary.LittleEndian.Uint32(header[8:12])
+		// crc skipped - header[:4]
+		timestamp := binary.LittleEndian.Uint32(header[4:8])
+		keyLen := binary.LittleEndian.Uint32(header[8:12])
+		valLen := binary.LittleEndian.Uint32(header[12:16])
 
 		entryStart := offset
 		offset += HeaderSize
@@ -70,8 +82,10 @@ func BuildIndex(lf *logFile) (map[string]LogPosition, error) {
 		offset += int64(valLen)
 
 		idx[string(key)] = LogPosition{
-			FileID: lf.id,
-			Offset: entryStart,
+			FileID:    lf.id,
+			ValuePos:  entryStart,
+			ValueSize: valLen,
+			timestamp: timestamp,
 		}
 	}
 
@@ -125,14 +139,16 @@ func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 
 	d.writePos = start + int64(n)
 
-	return LogPosition{
-		FileID: d.id,
-		Offset: start,
-	}, nil
+	return NewLogPosition(
+		d.id,
+		uint32(len(val)),
+		uint32(time.Now().Unix()),
+		start,
+	), nil
 }
 
 func (d *logFile) ReadAt(pos LogPosition) ([]byte, error) {
-	rec, err := record.Decode(d.file, pos.Offset)
+	rec, err := record.Decode(d.file, pos.ValuePos)
 	if err != nil {
 		return []byte{}, err
 	}

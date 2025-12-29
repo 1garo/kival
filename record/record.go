@@ -3,9 +3,11 @@ package record
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"math"
 	"os"
+	"time"
 )
 
 var (
@@ -15,6 +17,10 @@ var (
 	ErrEncodeInput   = errors.New("encode input invariant failed")
 )
 
+var (
+	CustomEpoch = 1704067200 // first commit to the projec - 2025-12-04 UTC
+)
+
 // Record is the value encoded or decoded from the db
 type Record struct {
 	Crc       uint32
@@ -22,17 +28,7 @@ type Record struct {
 	ValueSize uint32
 	Key       []byte
 	Value     []byte
-}
-
-// New create a new Record
-func New(crc, keySize, valueSize uint32, key, value []byte) Record {
-	return Record{
-		crc,
-		keySize,
-		valueSize,
-		key,
-		value,
-	}
+	Timestamp uint32
 }
 
 // Encode encode the record to be inserted into db
@@ -45,19 +41,22 @@ func Encode(key, val []byte) []byte {
 	keySize := uint32(len(key))
 	valSize := uint32(len(val))
 
-	const headerSize = 12 // crc(4) + keySize(4) + valSize(4)
+	const headerSize = 16 // crc(4) + timestamp(4) + keySize(4) + valSize(4)
 	recordSize := headerSize + keySize + valSize
 
 	buf := make([]byte, recordSize)
-	binary.LittleEndian.PutUint32(buf[4:8], keySize)
-	binary.LittleEndian.PutUint32(buf[8:12], valSize)
+	binary.LittleEndian.PutUint32(buf[8:12], keySize)
+	binary.LittleEndian.PutUint32(buf[12:headerSize], valSize)
 
-	copy(buf[12:12+keySize], key)
+	copy(buf[headerSize:headerSize+keySize], key)
 
-	copy(buf[12+keySize:], val)
+	copy(buf[headerSize+keySize:], val)
 
 	crc := GenerateCRC(keySize, valSize, key, val)
 	binary.LittleEndian.PutUint32(buf[0:4], crc)
+
+	ts32 := uint32(time.Now().Unix()) - uint32(CustomEpoch)
+	binary.LittleEndian.PutUint32(buf[4:8], ts32)
 
 	return buf
 }
@@ -71,10 +70,10 @@ func Decode(
 	if err != nil {
 		return Record{}, nil
 	}
-	headerSize := uint32(12)
+	headerSize := uint32(16)
 
 	if offset+int64(headerSize) > stat.Size() {
-		return Record{}, ErrPartialWrite
+		return Record{}, fmt.Errorf("%w: offset + header size greater than file size", ErrPartialWrite)
 	}
 
 	header := make([]byte, headerSize)
@@ -84,12 +83,13 @@ func Decode(
 	}
 
 	crc := binary.LittleEndian.Uint32(header[0:4])
-	keySize := binary.LittleEndian.Uint32(header[4:8])
+	timestamp := binary.LittleEndian.Uint32(header[4:8])
+	keySize := binary.LittleEndian.Uint32(header[8:12])
 	// record without a key is useless
 	if keySize == 0 {
 		return Record{}, ErrEmptyKey
 	}
-	valSize := binary.LittleEndian.Uint32(header[8:12])
+	valSize := binary.LittleEndian.Uint32(header[12:headerSize])
 
 	recordSize := headerSize + keySize + valSize
 	isBiggerThanFileSize := int64(recordSize)+offset > stat.Size()
@@ -97,7 +97,7 @@ func Decode(
 		// This is a partial write
 		// Treat as corruption
 		// During index rebuild → stop scanning
-		return Record{}, ErrPartialWrite
+		return Record{}, fmt.Errorf("%w: offset plus record size greater than file size", ErrPartialWrite)
 	}
 	offset += int64(headerSize)
 
@@ -118,7 +118,7 @@ func Decode(
 	if bytesRead != int(keySize)+int(valSize) {
 		// Partial write
 		// Corruption
-		return Record{}, ErrPartialWrite
+		return Record{}, fmt.Errorf("%w: bytes read different than key + value size", ErrPartialWrite)
 	}
 	offset += int64(valSize)
 
@@ -133,6 +133,7 @@ func Decode(
 		ValueSize: valSize,
 		Key:       key,
 		Value:     val,
+		Timestamp: timestamp,
 	}, nil
 }
 

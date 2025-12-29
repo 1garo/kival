@@ -66,33 +66,16 @@ func main() {
 	fmt.Println("Store loaded.")
 
 	// Write some values
-	if err := store.Set("name", []byte("alex")); err != nil {
+	if err := store.Set([]byte("name"), []byte("alex")); err != nil {
 		log.Fatal(err)
 	}
 
-	if err := store.Set("lang", []byte("golang")); err != nil {
-		log.Fatal(err)
-	}
-	if err := store.Set("surname", []byte("vardai")); err != nil {
-		log.Fatal(err)
-	}
+	fmt.Println("data wrote to the db")
 
 	// Read them back
-	val, err := store.Get("name")
+	val, err := store.Get([]byte("name"))
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("name:", string(val))
-
-	val, err = store.Get("lang")
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("lang:", string(val))
-
-	val, err = store.Get("surname")
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("surname:", string(val))
+	fmt.Println("val:", string(val))
 }
