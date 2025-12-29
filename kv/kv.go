@@ -57,12 +57,12 @@ func (m kv) Set(key []byte, data []byte) error {
 		return fmt.Errorf("%w: cannot append encoded data into db", err)
 	}
 
-	m.index[string(key)] = pos
+	m.keyDir[string(key)] = pos
 	return nil
 }
 
 func (m kv) Get(key []byte) ([]byte, error) {
-	pos, ok := m.index[string(key)]
+	pos, ok := m.keyDir[string(key)]
 	if !ok {
 		return nil, ErrNotFound
 	}
