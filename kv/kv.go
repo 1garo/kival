@@ -20,7 +20,7 @@ type KV interface {
 
 type kv struct {
 	activeLog log.Log
-	index     map[string]log.LogPosition
+	keyDir    map[string]log.LogPosition
 	logs      map[uint32]log.Log
 }
 
@@ -44,7 +44,7 @@ func OpenStore(path string) (*kv, error) {
 
 	return &kv{
 		activeLog: lf,
-		index:     index,
+		keyDir:    index,
 		logs:      map[uint32]log.Log{},
 	}, nil
 }
