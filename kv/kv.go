@@ -2,6 +2,7 @@ package kv
 
 import (
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/1garo/kival/log"
@@ -66,7 +67,7 @@ func (m kv) Set(key string, data []byte) error {
 	//}
 	pos, err := m.activeLog.Append([]byte(key), data)
 	if err != nil {
-		return errors.New("cannot append encoded data into db")
+		return fmt.Errorf("%w: cannot append encoded data into db", err)
 	}
 
 	m.index[key] = pos
