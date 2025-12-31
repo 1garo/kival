@@ -13,9 +13,9 @@ var (
 )
 
 type KV interface {
-	Set(key []byte, data []byte) error
+	Put(key []byte, data []byte) error
 	Get(key []byte) ([]byte, error)
-	Del(key []byte)
+	Del(key []byte) error
 }
 
 type kv struct {
@@ -24,7 +24,7 @@ type kv struct {
 	logs      map[uint32]log.Log
 }
 
-func OpenStore(path string) (*kv, error) {
+func Open(path string) (*kv, error) {
 	// 1. ensure directory exists
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return nil, err
@@ -51,7 +51,7 @@ func OpenStore(path string) (*kv, error) {
 
 var _ KV = (*kv)(nil)
 
-func (m kv) Set(key []byte, data []byte) error {
+func (m kv) Put(key []byte, data []byte) error {
 	pos, err := m.activeLog.Append(key, data)
 	if err != nil {
 		return fmt.Errorf("%w: cannot append encoded data into db", err)
@@ -70,4 +70,17 @@ func (m kv) Get(key []byte) ([]byte, error) {
 	return m.activeLog.ReadAt(pos)
 }
 
-func (m kv) Del(key []byte) {}
+func (m kv) Del(key []byte) error {
+	_, ok := m.keyDir[string(key)]
+	if !ok {
+		return ErrNotFound
+	}
+
+	_, err := m.activeLog.Append(key, []byte{})
+	if err != nil {
+		return fmt.Errorf("%w: cannot append encoded data into db", err)
+	}
+
+	delete(m.keyDir, string(key))
+	return nil
+}

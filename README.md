@@ -128,6 +128,8 @@ Details:
   - Remove key from index when tombstone is found
 - Get returns `ErrNotFound`
 
+- [x] Done
+
 Why: Required for correctness before compaction.
 
 ---

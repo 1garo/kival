@@ -63,10 +63,15 @@ func BuildIndex(lf *logFile) (map[string]LogPosition, error) {
 			return nil, err
 		}
 
-		// crc skipped - header[:4]
+		// crc skipped - header[0:4]
 		timestamp := binary.LittleEndian.Uint32(header[4:8])
 		keyLen := binary.LittleEndian.Uint32(header[8:12])
 		valLen := binary.LittleEndian.Uint32(header[12:16])
+
+		deleteRecord := false
+		if valLen == 0 {
+			deleteRecord = true
+		}
 
 		entryStart := offset
 		offset += HeaderSize
@@ -80,6 +85,12 @@ func BuildIndex(lf *logFile) (map[string]LogPosition, error) {
 
 		// We don't need to read the value into memory now
 		offset += int64(valLen)
+
+		if deleteRecord {
+			fmt.Println("deleting this key: ", string(key))
+			delete(idx, string(key))
+			continue
+		}
 
 		idx[string(key)] = LogPosition{
 			FileID:    lf.id,

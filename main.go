@@ -58,7 +58,7 @@ func SaveData1(path string, data []byte) error {
 }
 
 func main() {
-	store, err := kv.OpenStore("./data")
+	store, err := kv.Open("./data")
 	if err != nil {
 		log.Fatalf("failed to open store: %v", err)
 	}
@@ -66,7 +66,7 @@ func main() {
 	fmt.Println("Store loaded.")
 
 	// Write some values
-	if err := store.Set([]byte("name"), []byte("alex")); err != nil {
+	if err := store.Put([]byte("name"), []byte("alex")); err != nil {
 		log.Fatal(err)
 	}
 
@@ -74,6 +74,17 @@ func main() {
 
 	// Read them back
 	val, err := store.Get([]byte("name"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("val:", string(val))
+
+	err = store.Del([]byte("name"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("key deleted")
+	val, err = store.Get([]byte("name"))
 	if err != nil {
 		log.Fatal(err)
 	}
