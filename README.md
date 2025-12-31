@@ -145,6 +145,8 @@ Details:
   - Create a new active log
 - Index entries include FileID
 
+- [ ] Done
+
 Why: Enables compaction and bounds file sizes.
 
 ---
@@ -156,6 +158,8 @@ Goal: Read values from non-active log files
 Details:
 - Maintain a map of FileID to logFile
 - Get reads from the correct log using FileID
+
+- [ ] Done
 
 Why: Required once log rotation exists.
 
