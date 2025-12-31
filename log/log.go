@@ -1,7 +1,7 @@
 package log
 
 import (
-	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -48,55 +48,33 @@ type logFile struct {
 func BuildIndex(lf *logFile) (map[string]LogPosition, error) {
 	idx := make(map[string]LogPosition)
 	offset := int64(0)
-	f := lf.file
 
-	stat, err := f.Stat()
+	stat, err := lf.file.Stat()
 	if err != nil {
 		return nil, err
 	}
 	size := stat.Size()
 
 	for offset < size {
-		header := make([]byte, HeaderSize)
-		_, err := f.ReadAt(header, offset)
-		if err != nil {
-			return nil, err
+		start := offset
+		rec, bytesRead, err := record.Decode(lf.file, offset)
+		if err == io.EOF || errors.Is(err, record.ErrPartialWrite) || errors.Is(err, record.ErrCorruptRecord) {
+			break // stop reading this file
 		}
 
-		// crc skipped - header[0:4]
-		timestamp := binary.LittleEndian.Uint32(header[4:8])
-		keyLen := binary.LittleEndian.Uint32(header[8:12])
-		valLen := binary.LittleEndian.Uint32(header[12:16])
+		offset += bytesRead
 
-		deleteRecord := false
-		if valLen == 0 {
-			deleteRecord = true
-		}
-
-		entryStart := offset
-		offset += HeaderSize
-
-		key := make([]byte, keyLen)
-		_, err = f.ReadAt(key, offset)
-		if err != nil {
-			return nil, err
-		}
-		offset += int64(keyLen)
-
-		// We don't need to read the value into memory now
-		offset += int64(valLen)
-
+		deleteRecord := rec.ValueSize == 0
 		if deleteRecord {
-			fmt.Println("deleting this key: ", string(key))
-			delete(idx, string(key))
+			delete(idx, string(rec.Key))
 			continue
 		}
 
-		idx[string(key)] = LogPosition{
+		idx[string(rec.Key)] = LogPosition{
 			FileID:    lf.id,
-			ValuePos:  entryStart,
-			ValueSize: valLen,
-			timestamp: timestamp,
+			ValuePos:  start,
+			ValueSize: rec.ValueSize,
+			timestamp: rec.Timestamp,
 		}
 	}
 
@@ -159,7 +137,7 @@ func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 }
 
 func (d *logFile) ReadAt(pos LogPosition) ([]byte, error) {
-	rec, err := record.Decode(d.file, pos.ValuePos)
+	rec, _, err := record.Decode(d.file, pos.ValuePos)
 	if err != nil {
 		return []byte{}, err
 	}

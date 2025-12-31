@@ -65,21 +65,21 @@ func Encode(key, val []byte) []byte {
 func Decode(
 	f *os.File,
 	offset int64,
-) (Record, error) {
+) (Record, int64, error) {
 	stat, err := f.Stat()
 	if err != nil {
-		return Record{}, nil
+		return Record{}, -1, nil
 	}
 	headerSize := uint32(16)
 
 	if offset+int64(headerSize) > stat.Size() {
-		return Record{}, fmt.Errorf("%w: offset + header size greater than file size", ErrPartialWrite)
+		return Record{}, -1, fmt.Errorf("%w: offset + header size greater than file size", ErrPartialWrite)
 	}
 
 	header := make([]byte, headerSize)
 	_, err = f.ReadAt(header, offset)
 	if err != nil {
-		return Record{}, err
+		return Record{}, -1, err
 	}
 
 	crc := binary.LittleEndian.Uint32(header[0:4])
@@ -87,7 +87,7 @@ func Decode(
 	keySize := binary.LittleEndian.Uint32(header[8:12])
 	// record without a key is useless
 	if keySize == 0 {
-		return Record{}, ErrEmptyKey
+		return Record{}, -1, ErrEmptyKey
 	}
 	valSize := binary.LittleEndian.Uint32(header[12:headerSize])
 
@@ -97,14 +97,14 @@ func Decode(
 		// This is a partial write
 		// Treat as corruption
 		// During index rebuild → stop scanning
-		return Record{}, fmt.Errorf("%w: offset plus record size greater than file size", ErrPartialWrite)
+		return Record{}, -1, fmt.Errorf("%w: offset plus record size greater than file size", ErrPartialWrite)
 	}
 	offset += int64(headerSize)
 
 	key := make([]byte, keySize)
 	n, err := f.ReadAt(key, offset)
 	if err != nil {
-		return Record{}, err
+		return Record{}, -1, err
 	}
 	bytesRead := n
 	offset += int64(keySize)
@@ -112,19 +112,19 @@ func Decode(
 	val := make([]byte, valSize)
 	n, err = f.ReadAt(val, offset)
 	if err != nil {
-		return Record{}, err
+		return Record{}, -1, err
 	}
 	bytesRead += n
 	if bytesRead != int(keySize)+int(valSize) {
 		// Partial write
 		// Corruption
-		return Record{}, fmt.Errorf("%w: bytes read different than key + value size", ErrPartialWrite)
+		return Record{}, -1, fmt.Errorf("%w: bytes read different than key + value size", ErrPartialWrite)
 	}
 	offset += int64(valSize)
 
 	actualCRC := GenerateCRC(keySize, valSize, key, val)
 	if crc != actualCRC {
-		return Record{}, ErrCorruptRecord
+		return Record{}, -1, ErrCorruptRecord
 	}
 
 	return Record{
@@ -134,7 +134,7 @@ func Decode(
 		Key:       key,
 		Value:     val,
 		Timestamp: timestamp,
-	}, nil
+	}, offset, nil
 }
 
 func GenerateCRC(keySize, valSize uint32, key, val []byte) uint32 {
