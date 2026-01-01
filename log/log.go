@@ -11,10 +11,6 @@ import (
 	"github.com/1garo/kival/record"
 )
 
-const (
-	HeaderSize = 16
-)
-
 type Log interface {
 	Append(key, val []byte) (pos LogPosition, err error)
 	ReadAt(pos LogPosition) ([]byte, error)
@@ -58,14 +54,17 @@ func BuildIndex(lf *logFile) (map[string]LogPosition, error) {
 	for offset < size {
 		start := offset
 		rec, bytesRead, err := record.Decode(lf.file, offset)
-		if err == io.EOF || errors.Is(err, record.ErrPartialWrite) || errors.Is(err, record.ErrCorruptRecord) {
-			break // stop reading this file
+		if err != nil {
+			if err == io.EOF || errors.Is(err, record.ErrPartialWrite) || errors.Is(err, record.ErrCorruptRecord) {
+				break // stop reading this file
+			}
+			return nil, err
 		}
 
 		offset += bytesRead
 
-		deleteRecord := rec.ValueSize == 0
-		if deleteRecord {
+		isTombstone := rec.ValueSize == 0
+		if isTombstone {
 			delete(idx, string(rec.Key))
 			continue
 		}
@@ -114,6 +113,15 @@ func New(id uint32, dir string) (*logFile, error) {
 func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 	start := d.writePos
 
+	keySize := uint32(len(key))
+	valSize := uint32(len(val))
+	recordSize := record.HeaderSize + keySize + valSize
+	stat, _ := d.file.Stat()
+	exceedCapacity := int64(recordSize)+start > stat.Size()
+	if exceedCapacity {
+		// close current file
+		// create new active file
+	}
 	buf := record.Encode(key, val)
 
 	// add saveData here

@@ -19,6 +19,7 @@ var (
 
 var (
 	CustomEpoch = 1704067200 // first commit to the projec - 2025-12-04 UTC
+	HeaderSize  = uint32(16) // crc(4) + timestamp(4) + keySize(4) + valSize(4)
 )
 
 // Record is the value encoded or decoded from the db
@@ -32,6 +33,7 @@ type Record struct {
 }
 
 // Encode encode the record to be inserted into db
+// TODO: this should return an error too
 func Encode(key, val []byte) []byte {
 	greaterThanUint32MAX := len(key) > math.MaxUint32 || len(val) > math.MaxUint32
 	if len(key) == 0 || greaterThanUint32MAX {
@@ -41,16 +43,15 @@ func Encode(key, val []byte) []byte {
 	keySize := uint32(len(key))
 	valSize := uint32(len(val))
 
-	const headerSize = 16 // crc(4) + timestamp(4) + keySize(4) + valSize(4)
-	recordSize := headerSize + keySize + valSize
+	recordSize := HeaderSize + keySize + valSize
 
 	buf := make([]byte, recordSize)
 	binary.LittleEndian.PutUint32(buf[8:12], keySize)
-	binary.LittleEndian.PutUint32(buf[12:headerSize], valSize)
+	binary.LittleEndian.PutUint32(buf[12:HeaderSize], valSize)
 
-	copy(buf[headerSize:headerSize+keySize], key)
+	copy(buf[HeaderSize:HeaderSize+keySize], key)
 
-	copy(buf[headerSize+keySize:], val)
+	copy(buf[HeaderSize+keySize:], val)
 
 	crc := GenerateCRC(keySize, valSize, key, val)
 	binary.LittleEndian.PutUint32(buf[0:4], crc)
@@ -70,13 +71,12 @@ func Decode(
 	if err != nil {
 		return Record{}, -1, nil
 	}
-	headerSize := uint32(16)
 
-	if offset+int64(headerSize) > stat.Size() {
+	if offset+int64(HeaderSize) > stat.Size() {
 		return Record{}, -1, fmt.Errorf("%w: offset + header size greater than file size", ErrPartialWrite)
 	}
 
-	header := make([]byte, headerSize)
+	header := make([]byte, HeaderSize)
 	_, err = f.ReadAt(header, offset)
 	if err != nil {
 		return Record{}, -1, err
@@ -89,9 +89,9 @@ func Decode(
 	if keySize == 0 {
 		return Record{}, -1, ErrEmptyKey
 	}
-	valSize := binary.LittleEndian.Uint32(header[12:headerSize])
+	valSize := binary.LittleEndian.Uint32(header[12:HeaderSize])
 
-	recordSize := headerSize + keySize + valSize
+	recordSize := HeaderSize + keySize + valSize
 	isBiggerThanFileSize := int64(recordSize)+offset > stat.Size()
 	if isBiggerThanFileSize {
 		// This is a partial write
@@ -99,7 +99,7 @@ func Decode(
 		// During index rebuild → stop scanning
 		return Record{}, -1, fmt.Errorf("%w: offset plus record size greater than file size", ErrPartialWrite)
 	}
-	offset += int64(headerSize)
+	offset += int64(HeaderSize)
 
 	key := make([]byte, keySize)
 	n, err := f.ReadAt(key, offset)
