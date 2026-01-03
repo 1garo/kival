@@ -11,6 +11,13 @@ import (
 	"github.com/1garo/kival/record"
 )
 
+var (
+	ErrCapacityExceeded = errors.New("capacity exceeded creation failed")
+)
+
+// const MaxDataFileSize = 128 * 1024 * 1024 // 128 MB
+const MaxDataFileSize = 500 // 500 Bytes
+
 type Log interface {
 	Append(key, val []byte) (pos LogPosition, err error)
 	ReadAt(pos LogPosition) ([]byte, error)
@@ -33,6 +40,27 @@ func NewLogPosition(fileID, valueSize, timestamp uint32, valuePos int64) LogPosi
 		ValueSize: valueSize,
 		timestamp: timestamp,
 	}
+}
+
+func Open(path string) (*logFile, map[string]LogPosition, error) {
+	// 1. ensure directory exists
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return nil, map[string]LogPosition{}, err
+	}
+
+	// 2. open active log file
+	lf, err := New(1, path) // we’ll improve file ID later
+	if err != nil {
+		return nil, map[string]LogPosition{}, err
+	}
+
+	// 3. build index by scanning
+	index, err := BuildIndex(lf)
+	if err != nil {
+		return nil, map[string]LogPosition{}, err
+	}
+
+	return lf, index, err
 }
 
 type logFile struct {
@@ -116,11 +144,16 @@ func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 	keySize := uint32(len(key))
 	valSize := uint32(len(val))
 	recordSize := record.HeaderSize + keySize + valSize
-	stat, _ := d.file.Stat()
-	exceedCapacity := int64(recordSize)+start > stat.Size()
+	// TODO: probably this needs to become a method -> ensureCapacity()
+	exceedCapacity := int64(recordSize)+start > MaxDataFileSize
 	if exceedCapacity {
-		// close current file
-		// create new active file
+		err := d.file.Close()
+		if err != nil {
+			return LogPosition{}, fmt.Errorf("%w: %v", ErrCapacityExceeded, err)
+		}
+
+		fd, err := New(d.id+1, "./data")
+		d.file = fd.file
 	}
 	buf := record.Encode(key, val)
 
@@ -154,7 +187,8 @@ func (d *logFile) ReadAt(pos LogPosition) ([]byte, error) {
 }
 
 func (d *logFile) Size() int64 {
-	return 0
+	stat, _ := d.file.Stat()
+	return stat.Size()
 }
 
 func (d *logFile) ID() uint32 {

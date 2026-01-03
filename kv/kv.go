@@ -3,7 +3,6 @@ package kv
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/1garo/kival/log"
 )
@@ -24,26 +23,14 @@ type kv struct {
 	logs      map[uint32]log.Log
 }
 
-func Open(path string) (*kv, error) {
-	// 1. ensure directory exists
-	if err := os.MkdirAll(path, 0755); err != nil {
-		return nil, err
-	}
-
-	// 2. open active log file
-	lf, err := log.New(1, path) // we’ll improve file ID later
-	if err != nil {
-		return nil, err
-	}
-
-	// 3. build index by scanning
-	index, err := log.BuildIndex(lf)
+func New(path string) (*kv, error) {
+	activeLog, index, err := log.Open(path)
 	if err != nil {
 		return nil, err
 	}
 
 	return &kv{
-		activeLog: lf,
+		activeLog: activeLog,
 		keyDir:    index,
 		logs:      map[uint32]log.Log{},
 	}, nil
@@ -76,6 +63,7 @@ func (m kv) Del(key []byte) error {
 		return ErrNotFound
 	}
 
+	// add tombstone record
 	_, err := m.activeLog.Append(key, []byte{})
 	if err != nil {
 		return fmt.Errorf("%w: cannot append encoded data into db", err)

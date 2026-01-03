@@ -145,7 +145,8 @@ Details:
   - Create a new active log
 - Index entries include FileID
 
-- [ ] Done
+- [x] Done
+  - [ ] Test if ensure capacity will create new file correctly.
 
 Why: Enables compaction and bounds file sizes.
 
