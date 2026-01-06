@@ -66,23 +66,23 @@ func main() {
 	fmt.Println("Store loaded.")
 
 	// Write some values
-	if err := store.Put([]byte("bar"), []byte("baz")); err != nil {
+	if err := store.Put([]byte("biztech"), []byte("vardaivardaivardai")); err != nil {
 		log.Fatal(err)
 	}
 
 	fmt.Println("data wrote to the db")
 
 	// Read them back
-	val, err := store.Get([]byte("bar"))
+	val, err := store.Get([]byte("biztech"))
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("bar:", string(val))
-	val, err = store.Get([]byte("name"))
+	fmt.Println("ale:", string(val))
+	val, err = store.Get([]byte("alex"))
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("val:", string(val))
+	fmt.Println("alex:", string(val))
 
 	//err = store.Del([]byte("name"))
 	//if err != nil {

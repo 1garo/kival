@@ -146,7 +146,7 @@ Details:
 - Index entries include FileID
 
 - [x] Done
-  - [ ] Test if ensure capacity will create new file correctly.
+  - [x] Test if ensure capacity will create new file correctly.
 
 Why: Enables compaction and bounds file sizes.
 

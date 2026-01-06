@@ -20,7 +20,6 @@ type KV interface {
 type kv struct {
 	activeLog log.Log
 	keyDir    map[string]log.LogPosition
-	logs      map[uint32]log.Log
 }
 
 func New(path string) (*kv, error) {
@@ -54,6 +53,7 @@ func (m kv) Get(key []byte) ([]byte, error) {
 		return nil, ErrNotFound
 	}
 
+	// TODO: read this from activelog.logs older data, need to code it
 	return m.activeLog.ReadAt(pos)
 }
 
