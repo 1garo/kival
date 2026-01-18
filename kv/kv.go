@@ -20,52 +20,76 @@ type KV interface {
 type kv struct {
 	activeLog log.Log
 	keyDir    map[string]log.LogPosition
+	logs      map[uint32]log.Log
 }
 
 func New(path string) (*kv, error) {
-	activeLog, index, err := log.Open(path)
+	activeLog, olderLogs, index, err := log.Open(path)
 	if err != nil {
 		return nil, err
 	}
 
+
+	logs := make(map[uint32]log.Log, len(olderLogs))
+	for id, lf := range olderLogs {
+		logs[id] = lf
+	}
 	return &kv{
 		activeLog: activeLog,
 		keyDir:    index,
-		logs:      map[uint32]log.Log{},
+		logs:      logs,
 	}, nil
 }
 
 var _ KV = (*kv)(nil)
 
-func (m kv) Put(key []byte, data []byte) error {
+func (m *kv) Put(key []byte, data []byte) error {
 	pos, err := m.activeLog.Append(key, data)
 	if err != nil {
-		return fmt.Errorf("%w: cannot append encoded data into db", err)
+		if errors.Is(err, log.ErrCapacityExceeded) {
+			m.activeLog.MakeReadOnly()
+
+			newLog, err := log.New(m.activeLog.ID()+1, "./data")
+			if err != nil {
+				return fmt.Errorf("cannot create a new after capacity exceeded: %v", err)
+			}
+			// save for future reads on old files
+			m.logs[m.activeLog.ID()] = m.activeLog
+
+			m.activeLog = newLog
+			// TODO: maybe there is a better way to do this
+			pos, err = m.activeLog.Append(key, data)
+			if err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("%w: cannot append encoded data into db", err)
+		}
 	}
 
 	m.keyDir[string(key)] = pos
 	return nil
 }
 
-func (m kv) Get(key []byte) ([]byte, error) {
+func (m *kv) Get(key []byte) ([]byte, error) {
 	pos, ok := m.keyDir[string(key)]
 	if !ok {
 		return nil, ErrNotFound
 	}
 
-	// TODO: read this from activelog.logs older data, need to code it
+	if active, ok := m.logs[pos.FileID]; ok {
+		return active.ReadAt(pos)
+	}
 	return m.activeLog.ReadAt(pos)
 }
 
-func (m kv) Del(key []byte) error {
-	_, ok := m.keyDir[string(key)]
-	if !ok {
+func (m *kv) Del(key []byte) error {
+	if _, ok := m.keyDir[string(key)]; !ok {
 		return ErrNotFound
 	}
 
 	// add tombstone record
-	_, err := m.activeLog.Append(key, []byte{})
-	if err != nil {
+	if _, err := m.activeLog.Append(key, nil); err != nil {
 		return fmt.Errorf("%w: cannot append encoded data into db", err)
 	}
 

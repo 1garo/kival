@@ -17,6 +17,7 @@ import (
 
 var (
 	ErrCapacityExceeded = errors.New("capacity exceeded creation failed")
+	ErrReadOnlySegment  = errors.New("file is in readonly state, cannot write to it")
 )
 
 // const MaxDataFileSize = 128 * 1024 * 1024 // 128 MB
@@ -27,6 +28,8 @@ type Log interface {
 	ReadAt(pos LogPosition) ([]byte, error)
 	Size() int64
 	ID() uint32
+	Close() error
+	MakeReadOnly()
 }
 
 // LogPosition
@@ -53,55 +56,54 @@ func parseFileID(name string) uint32 {
 	return uint32(id)
 }
 
-func Open(path string) (*logFile, map[string]LogPosition, error) {
-	var (
-		err   error
-		files []string
-		lf    *logFile
-	)
-	// 1. ensure directory exists
+func Open(path string) (*logFile, map[uint32]*logFile, map[string]LogPosition, error) {
 	if err := os.MkdirAll(path, 0755); err != nil {
-		return nil, map[string]LogPosition{}, err
+		return nil, nil, nil, err
 	}
 
-	idx := make(map[string]LogPosition)
-	files, _ = filepath.Glob(filepath.Join(path, "*.data"))
+	files, _ := filepath.Glob(filepath.Join(path, "*.data"))
+	sort.Strings(files)
+
+	index := make(map[string]LogPosition)
+	logs := make(map[uint32]*logFile)
+
 	if len(files) == 0 {
-		lf, err = New(1, path) // we’ll improve file ID later
+		lf, err := New(1, path)
 		if err != nil {
-			return nil, map[string]LogPosition{}, err
+			return nil, nil, nil, err
 		}
-
-		// 3. build index by scanning
-		if err = lf.BuildIndex(idx); err != nil {
-			return nil, map[string]LogPosition{}, err
-		}
-	} else {
-		sort.Strings(files)
-		for _, f := range files {
-			fID := parseFileID(f)
-			// 2. open active log file
-			lf, err = New(fID, path) // we’ll improve file ID later
-			if err != nil {
-				return nil, map[string]LogPosition{}, err
-			}
-
-			// 3. build index by scanning
-			if err = lf.BuildIndex(idx); err != nil {
-				return nil, map[string]LogPosition{}, err
-			}
-		}
-		log.Printf("idx: %v", idx)
+		return lf, logs, index, nil
 	}
 
-	return lf, idx, err
+	var active *logFile
+
+	for i, f := range files {
+		id := parseFileID(f)
+
+		lf, err := New(id, path)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		if err := lf.BuildIndex(index); err != nil {
+			return nil, nil, nil, err
+		}
+
+		if i == len(files)-1 {
+			active = lf
+		} else {
+			logs[id] = lf
+		}
+	}
+
+	return active, logs, index, nil
 }
 
 type logFile struct {
 	id       uint32
 	file     *os.File
 	writePos int64 // where the next Write should happen
-	logs     map[uint32]*logFile
+	readOnly bool
 }
 
 func (d *logFile) BuildIndex(idx map[string]LogPosition) error {
@@ -112,7 +114,6 @@ func (d *logFile) BuildIndex(idx map[string]LogPosition) error {
 		return err
 	}
 	size := stat.Size()
-	log.Println("size: ", size, offset)
 
 	for offset < size {
 		start := offset
@@ -146,6 +147,10 @@ func (d *logFile) BuildIndex(idx map[string]LogPosition) error {
 }
 
 func New(id uint32, dir string) (*logFile, error) {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, err
+	}
+
 	f, err := os.OpenFile(
 		filepath.Join(dir, fmt.Sprintf("%d.data", id)),
 		os.O_CREATE|os.O_RDWR,
@@ -165,7 +170,6 @@ func New(id uint32, dir string) (*logFile, error) {
 		file:     f,
 		id:       id,
 		writePos: pos,
-		logs:     map[uint32]*logFile{},
 	}, nil
 }
 
@@ -174,6 +178,9 @@ func New(id uint32, dir string) (*logFile, error) {
 //}
 
 func (d *logFile) Append(key, val []byte) (LogPosition, error) {
+	if d.readOnly {
+		return LogPosition{}, ErrReadOnlySegment
+	}
 	start := d.writePos
 
 	keySize := uint32(len(key))
@@ -182,22 +189,7 @@ func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 	// TODO: probably this needs to become a method -> ensureCapacity()
 	exceedCapacity := int64(recordSize)+start > MaxDataFileSize
 	if exceedCapacity {
-		err := d.file.Close()
-		if err != nil {
-			return LogPosition{}, fmt.Errorf("%w: %v", ErrCapacityExceeded, err)
-		}
-
-		fd, err := New(d.id+1, "./data")
-		if err != nil {
-			return LogPosition{}, fmt.Errorf("cannot create a new after capacity exceeded: %v", err)
-		}
-		// save for future reads on old files
-		d.logs[d.id] = d
-
-		// update with new record
-		d.id += 1
-		d.file = fd.file
-		start = 0
+		return LogPosition{}, ErrCapacityExceeded
 	}
 	buf := record.Encode(key, val)
 
@@ -238,4 +230,12 @@ func (d *logFile) Size() int64 {
 
 func (d *logFile) ID() uint32 {
 	return d.id
+}
+
+func (d *logFile) Close() error {
+	return d.file.Close()
+}
+
+func (d *logFile) MakeReadOnly() {
+	d.readOnly = true
 }

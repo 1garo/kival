@@ -160,7 +160,7 @@ Details:
 - Maintain a map of FileID to logFile
 - Get reads from the correct log using FileID
 
-- [ ] Done
+- [x] Done
 
 Why: Required once log rotation exists.
 
