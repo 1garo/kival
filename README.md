@@ -10,17 +10,17 @@ The goal is **correctness first**, then **performance**, while keeping the imple
 
 ## Project Goals
 
-- Understand append-only storage engines  
-- Learn how Bitcask-style indexing works  
-- Practice crash recovery and corruption handling  
-- Build a minimal but correct key-value store in Go  
+- Understand append-only storage engines
+- Learn how Bitcask-style indexing works
+- Practice crash recovery and corruption handling
+- Build a minimal but correct key-value store in Go
 
 ### Non-goals (for now)
 
-- Networking  
-- Distribution  
-- Transactions  
-- Encryption or compression  
+- Networking
+- Distribution
+- Transactions
+- Encryption or compression
 
 ---
 
@@ -149,6 +149,20 @@ Details:
   - [x] Test if ensure capacity will create new file correctly.
 
 Why: Enables compaction and bounds file sizes.
+
+---
+
+### Milestone 8.1 — Added tests
+Goal: Add tests
+
+Packages:
+  - [ ] kv
+  - [ ] log
+  - [ ] record
+
+
+- [ ] Done
+
 
 ---
 

@@ -29,7 +29,6 @@ func New(path string) (*kv, error) {
 		return nil, err
 	}
 
-
 	logs := make(map[uint32]log.Log, len(olderLogs))
 	for id, lf := range olderLogs {
 		logs[id] = lf

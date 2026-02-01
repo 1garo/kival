@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -214,7 +213,6 @@ func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 }
 
 func (d *logFile) ReadAt(pos LogPosition) ([]byte, error) {
-	log.Println("file id: ", d.id)
 	rec, _, err := record.Decode(d.file, pos.ValuePos)
 	if err != nil {
 		return []byte{}, err
