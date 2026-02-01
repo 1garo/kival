@@ -17,6 +17,7 @@ import (
 var (
 	ErrCapacityExceeded = errors.New("capacity exceeded creation failed")
 	ErrReadOnlySegment  = errors.New("file is in readonly state, cannot write to it")
+	ErrLogClosed        = errors.New("log is closed")
 )
 
 // const MaxDataFileSize = 128 * 1024 * 1024 // 128 MB
@@ -103,6 +104,7 @@ type logFile struct {
 	file     *os.File
 	writePos int64 // where the next Write should happen
 	readOnly bool
+	closed   bool
 }
 
 func (d *logFile) BuildIndex(idx map[string]LogPosition) error {
@@ -213,6 +215,10 @@ func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 }
 
 func (d *logFile) ReadAt(pos LogPosition) ([]byte, error) {
+	if d.closed {
+		return nil, ErrLogClosed
+	}
+
 	rec, _, err := record.Decode(d.file, pos.ValuePos)
 	if err != nil {
 		return []byte{}, err
@@ -231,6 +237,7 @@ func (d *logFile) ID() uint32 {
 }
 
 func (d *logFile) Close() error {
+	d.closed = true
 	return d.file.Close()
 }
 
