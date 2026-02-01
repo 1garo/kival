@@ -152,20 +152,6 @@ Why: Enables compaction and bounds file sizes.
 
 ---
 
-### Milestone 8.1 — Added tests
-Goal: Add tests
-
-Packages:
-  - [ ] kv
-  - [ ] log
-  - [ ] record
-
-
-- [ ] Done
-
-
----
-
 ### Milestone 9 — Reads from Older Log Files
 
 Goal: Read values from non-active log files
@@ -177,6 +163,18 @@ Details:
 - [x] Done
 
 Why: Required once log rotation exists.
+
+---
+
+### Milestone 9.1 — Added tests
+Goal: Add tests
+
+Packages:
+  - [ ] kv
+  - [ ] log
+  - [ ] record
+
+- [ ] Done
 
 ---
 
