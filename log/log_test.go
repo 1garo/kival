@@ -92,3 +92,26 @@ func TestLog_ReadAt_TruncatedRecordReturnsError(t *testing.T) {
 	assert.ErrorIs(t, err, record.ErrPartialWrite, "should fail because log is closed")
 	assert.Equal(t, 0, len(b), "should return empty data")
 }
+
+func TestLog_Append_InsertRecord(t *testing.T) {
+	activeLog := newTestLog(t)
+
+	val := []byte("v1")
+	p, err := activeLog.Append([]byte("k1"), val)
+	require.NoError(t, err)
+
+	assert.Equal(t, p.FileID, activeLog.ID(), "should return correct file ID")
+	assert.Equal(t, p.ValuePos, int64(0), "should return correct position")
+	assert.Equal(t, p.ValueSize, uint32(len(val)), "should return correct value size")
+}
+
+func TestLog_Append_ReadOnlySegmentError(t *testing.T) {
+	activeLog := newTestLog(t)
+
+	activeLog.MarkReadOnly()
+
+	val := []byte("v1")
+	p, err := activeLog.Append([]byte("k1"), val)
+	assert.ErrorIs(t, err, log.ErrReadOnlySegment, "should fail because log is read-only")
+	assert.True(t, p == log.LogPosition{}, "position should be empty")
+}

@@ -29,7 +29,7 @@ type Log interface {
 	Size() int64
 	ID() uint32
 	Close() error
-	MakeReadOnly()
+	MarkReadOnly()
 }
 
 // LogPosition
@@ -174,10 +174,6 @@ func New(id uint32, dir string) (*logFile, error) {
 	}, nil
 }
 
-//func logFilename(id uint32, dir string) string {
-//	return filepath.Join(dir, fmt.Sprintf("%08d.data", id))
-//}
-
 func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 	if d.readOnly {
 		return LogPosition{}, ErrReadOnlySegment
@@ -241,6 +237,6 @@ func (d *logFile) Close() error {
 	return d.file.Close()
 }
 
-func (d *logFile) MakeReadOnly() {
+func (d *logFile) MarkReadOnly() {
 	d.readOnly = true
 }

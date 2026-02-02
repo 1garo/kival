@@ -46,7 +46,7 @@ func (m *kv) Put(key []byte, data []byte) error {
 	pos, err := m.activeLog.Append(key, data)
 	if err != nil {
 		if errors.Is(err, log.ErrCapacityExceeded) {
-			m.activeLog.MakeReadOnly()
+			m.activeLog.MarkReadOnly()
 
 			newLog, err := log.New(m.activeLog.ID()+1, "./data")
 			if err != nil {
@@ -61,9 +61,9 @@ func (m *kv) Put(key []byte, data []byte) error {
 			if err != nil {
 				return err
 			}
-		} else {
-			return fmt.Errorf("%w: cannot append encoded data into db", err)
 		}
+
+		return fmt.Errorf("cannot append encoded data into db: %v", err)
 	}
 
 	m.keyDir[string(key)] = pos
