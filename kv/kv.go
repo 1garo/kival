@@ -87,7 +87,6 @@ func (m *kv) Del(key []byte) error {
 		return ErrNotFound
 	}
 
-	// add tombstone record
 	if _, err := m.activeLog.Append(key, nil); err != nil {
 		return fmt.Errorf("%w: cannot append encoded data into db", err)
 	}

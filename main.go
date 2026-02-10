@@ -65,14 +65,12 @@ func main() {
 
 	fmt.Println("Store loaded.")
 
-	// Write some values
 	if err := store.Put([]byte("biz"), []byte("thisisanewvaluetothenewdatabase123")); err != nil {
 		log.Fatal(err)
 	}
 
 	fmt.Println("data wrote to the db")
 
-	// Read them back
 	val, err := store.Get([]byte("biztechtech"))
 	if err != nil {
 		log.Println("err: ", err)
