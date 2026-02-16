@@ -166,15 +166,15 @@ Why: Required once log rotation exists.
 
 ---
 
-### Milestone 9.1 — Added tests
+### Milestone 9.1 — Added tests.
 Goal: Add tests
 
 Packages:
   - [ ] kv
-  - [ ] log
+  - [x] log
   - [ ] record
 
-- [ ] Done
+- [x] Partially, skipping kv and record for now.
 
 ---
 
