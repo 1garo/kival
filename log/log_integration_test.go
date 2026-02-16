@@ -96,7 +96,7 @@ func TestLog_ReadAt_TruncatedRecordReturnsError(t *testing.T) {
 
 	p.ValuePos += 1
 	b, err := activeLog.ReadAt(p)
-	assert.ErrorIs(t, err, record.ErrPartialWrite, "should fail because log is closed")
+	assert.ErrorIs(t, err, record.ErrPartialWrite, "should fail because log position is invalid")
 	assert.Equal(t, 0, len(b), "should return empty data")
 }
 

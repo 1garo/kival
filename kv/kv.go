@@ -7,8 +7,10 @@ import (
 	"github.com/1garo/kival/log"
 )
 
+const DEFAULT_DB_PATH = "./data"
+
 var (
-	ErrNotFound = errors.New("key not found in db")
+	ErrKeyNotFound = errors.New("key not found in db")
 )
 
 type KV interface {
@@ -24,46 +26,56 @@ type kv struct {
 }
 
 func New(path string) (*kv, error) {
-	activeLog, olderLogs, index, err := log.Open(path)
+	activeLog, logs, index, err := log.Open(path)
 	if err != nil {
 		return nil, err
 	}
 
-	logs := make(map[uint32]log.Log, len(olderLogs))
-	for id, lf := range olderLogs {
-		logs[id] = lf
+	l := make(map[uint32]log.Log, len(logs))
+	for id, lf := range logs {
+		l[id] = lf
 	}
 	return &kv{
 		activeLog: activeLog,
 		keyDir:    index,
-		logs:      logs,
+		logs:      l,
 	}, nil
 }
 
 var _ KV = (*kv)(nil)
 
+// rotateActiveLog rotates the active log file and creates a new one.
+func (m *kv) rotateActiveLog(key, data []byte) (log.LogPosition, error) {
+	m.activeLog.MarkReadOnly()
+
+	newLog, err := log.New(m.activeLog.ID()+1, DEFAULT_DB_PATH)
+	if err != nil {
+		return log.LogPosition{}, fmt.Errorf("cannot create a new after capacity exceeded: %v", err)
+	}
+	m.logs[m.activeLog.ID()] = m.activeLog
+
+	m.activeLog = newLog
+	pos, err := m.activeLog.Append(key, data)
+	if err != nil {
+		return log.LogPosition{}, fmt.Errorf("failed to append to rotated log: %v", err)
+	}
+
+	return pos, nil
+}
+
 func (m *kv) Put(key []byte, data []byte) error {
 	pos, err := m.activeLog.Append(key, data)
 	if err != nil {
 		if errors.Is(err, log.ErrCapacityExceeded) {
-			m.activeLog.MarkReadOnly()
-
-			newLog, err := log.New(m.activeLog.ID()+1, "./data")
-			if err != nil {
-				return fmt.Errorf("cannot create a new after capacity exceeded: %v", err)
-			}
-			// save for future reads on old files
-			m.logs[m.activeLog.ID()] = m.activeLog
-
-			m.activeLog = newLog
-			// TODO: maybe there is a better way to do this
-			pos, err = m.activeLog.Append(key, data)
+			fmt.Println("entrou aqui?")
+			p, err := m.rotateActiveLog(key, data)
 			if err != nil {
 				return err
 			}
+			pos = p
+		} else {
+			return fmt.Errorf("cannot append encoded data into db: %v", err)
 		}
-
-		return fmt.Errorf("cannot append encoded data into db: %v", err)
 	}
 
 	m.keyDir[string(key)] = pos
@@ -73,7 +85,7 @@ func (m *kv) Put(key []byte, data []byte) error {
 func (m *kv) Get(key []byte) ([]byte, error) {
 	pos, ok := m.keyDir[string(key)]
 	if !ok {
-		return nil, ErrNotFound
+		return nil, ErrKeyNotFound
 	}
 
 	if active, ok := m.logs[pos.FileID]; ok {
@@ -84,11 +96,11 @@ func (m *kv) Get(key []byte) ([]byte, error) {
 
 func (m *kv) Del(key []byte) error {
 	if _, ok := m.keyDir[string(key)]; !ok {
-		return ErrNotFound
+		return ErrKeyNotFound
 	}
 
 	if _, err := m.activeLog.Append(key, nil); err != nil {
-		return fmt.Errorf("%w: cannot append encoded data into db", err)
+		return fmt.Errorf("cannot append encoded data into db: %w", err)
 	}
 
 	delete(m.keyDir, string(key))

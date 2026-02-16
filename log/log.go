@@ -56,7 +56,13 @@ func parseFileID(name string) uint32 {
 	return uint32(id)
 }
 
-func Open(path string) (*logFile, map[uint32]*logFile, map[string]LogPosition, error) {
+type Logs map[uint32]*logFile
+type Index map[string]LogPosition
+
+// Open recreates the log state from the given path.
+// It goes through all the log files under the given path.
+// It returns the active log file, a map of log files, a map of log positions, and an error.
+func Open(path string) (*logFile, Logs, Index, error) {
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return nil, nil, nil, err
 	}
@@ -64,8 +70,8 @@ func Open(path string) (*logFile, map[uint32]*logFile, map[string]LogPosition, e
 	files, _ := filepath.Glob(filepath.Join(path, "*.data"))
 	sort.Strings(files)
 
-	index := make(map[string]LogPosition)
-	logs := make(map[uint32]*logFile)
+	index := make(Index)
+	logs := make(Logs)
 
 	if len(files) == 0 {
 		lf, err := New(1, path)
@@ -89,7 +95,8 @@ func Open(path string) (*logFile, map[uint32]*logFile, map[string]LogPosition, e
 			return nil, nil, nil, err
 		}
 
-		if i == len(files)-1 {
+		isLatest := i == len(files)-1
+		if isLatest {
 			active = lf
 		} else {
 			logs[id] = lf
@@ -99,14 +106,16 @@ func Open(path string) (*logFile, map[uint32]*logFile, map[string]LogPosition, e
 	return active, logs, index, nil
 }
 
+// logFile represents a log file.
 type logFile struct {
 	id       uint32
 	file     *os.File
-	writePos int64 // where the next Write should happen
+	writePos int64
 	readOnly bool
 	closed   bool
 }
 
+// BuildIndex builds an index of keys and their positions in the log file.
 func (d *logFile) BuildIndex(idx map[string]LogPosition) error {
 	offset := int64(0)
 
@@ -114,22 +123,23 @@ func (d *logFile) BuildIndex(idx map[string]LogPosition) error {
 	if err != nil {
 		return err
 	}
-	size := stat.Size()
+	fileSize := stat.Size()
 
-	for offset < size {
+	for offset < fileSize {
 		start := offset
 		rec, bytesRead, err := record.Decode(d.file, offset)
 		if err != nil {
 			if err == io.EOF || errors.Is(err, record.ErrPartialWrite) || errors.Is(err, record.ErrCorruptRecord) {
-				break // stop reading this file
+				break
 			}
+
 			return err
 		}
 
 		offset += bytesRead
 
-		isTombstone := rec.ValueSize == 0
-		if isTombstone {
+		isTombstoneRecord := rec.ValueSize == 0
+		if isTombstoneRecord {
 			delete(idx, string(rec.Key))
 			continue
 		}
@@ -147,6 +157,7 @@ func (d *logFile) BuildIndex(idx map[string]LogPosition) error {
 	return nil
 }
 
+// New creates a new log file
 func New(id uint32, dir string) (*logFile, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
@@ -174,23 +185,31 @@ func New(id uint32, dir string) (*logFile, error) {
 	}, nil
 }
 
+// isCapacityExceeded checks if the log file has exceeded its capacity.
+func (d *logFile) isCapacityExceeded(key, val []byte) error {
+	keySize := uint32(len(key))
+	valSize := uint32(len(val))
+
+	recordSize := record.HeaderSize + keySize + valSize
+	if int64(recordSize)+d.writePos > MaxDataFileSize {
+		return ErrCapacityExceeded
+	}
+	return nil
+}
+
+// Append appends a key-value pair to the log file.
 func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 	if d.readOnly {
 		return LogPosition{}, ErrReadOnlySegment
 	}
 	start := d.writePos
 
-	keySize := uint32(len(key))
-	valSize := uint32(len(val))
-	recordSize := record.HeaderSize + keySize + valSize
-	// TODO: probably this needs to become a method -> ensureCapacity()
-	exceedCapacity := int64(recordSize)+start > MaxDataFileSize
-	if exceedCapacity {
-		return LogPosition{}, ErrCapacityExceeded
+	if err := d.isCapacityExceeded(key, val); err != nil {
+		return LogPosition{}, err
 	}
-	buf := record.Encode(key, val)
 
-	n, err := d.file.WriteAt(buf, start)
+	buf := record.Encode(key, val)
+	n, err := d.file.WriteAt(buf, d.writePos)
 	if err != nil {
 		return LogPosition{}, err
 	}
@@ -199,7 +218,7 @@ func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 		return LogPosition{}, err
 	}
 
-	d.writePos = start + int64(n)
+	d.writePos += int64(n)
 
 	return NewLogPosition(
 		d.id,
@@ -209,6 +228,7 @@ func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 	), nil
 }
 
+// ReadAt reads a key-value pair from the log file at the given position.
 func (d *logFile) ReadAt(pos LogPosition) ([]byte, error) {
 	if d.closed {
 		return nil, ErrLogClosed
@@ -222,20 +242,24 @@ func (d *logFile) ReadAt(pos LogPosition) ([]byte, error) {
 	return rec.Value, nil
 }
 
+// Size return the size of the log file.
 func (d *logFile) Size() int64 {
 	stat, _ := d.file.Stat()
 	return stat.Size()
 }
 
+// ID returns the ID of the current log file.
 func (d *logFile) ID() uint32 {
 	return d.id
 }
 
+// Close closes the current log file.
 func (d *logFile) Close() error {
 	d.closed = true
 	return d.file.Close()
 }
 
+// MarkReadOnly marks the current log file as read-only.
 func (d *logFile) MarkReadOnly() {
 	d.readOnly = true
 }

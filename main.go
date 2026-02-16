@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -71,16 +72,21 @@ func main() {
 
 	fmt.Println("data wrote to the db")
 
-	val, err := store.Get([]byte("biztechtech"))
-	if err != nil {
-		log.Println("err: ", err)
-	}
-	fmt.Println("biztechtech:", string(val))
-	val, err = store.Get([]byte("biz"))
+	val, err := store.Get([]byte("biz"))
 	if err != nil {
 		log.Println("err: ", err)
 	}
 	fmt.Println("biz:", string(val))
+	val, err = store.Get([]byte("bizbiz"))
+	if err != nil {
+		if errors.Is(err, kv.ErrKeyNotFound) {
+			log.Println("err: ", err)
+			return
+		}
+
+		log.Println(err)
+	}
+	fmt.Println("bizbiz:", string(val))
 
 	//err = store.Del([]byte("name"))
 	//if err != nil {
