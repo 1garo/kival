@@ -10,7 +10,7 @@ This document provides guidelines for agentic coding agents working in the Kival
   - `log`: Append-only log file management with rotation
   - `record`: Binary record encoding/decoding with CRC validation
   - `kv`: Key-value store API layer
-- **Key Constants**: `MaxDataFileSize = 500` (bytes for testing)
+- **Key Constants**: `MaxDataFileSize = 1500` (bytes for testing)
 
 ## Build/Lint/Test Commands
 
@@ -112,7 +112,7 @@ if errors.Is(err, log.ErrCapacityExceeded) {
 type Log interface { ... }  // Interface
 type logFile struct { ... }  // Unexported struct
 func New(id uint32, dir string) (*logFile, error) { ... }  // Constructor
-const MaxDataFileSize = 500  // Exported constant
+const MaxDataFileSize = 1500  // Exported constant
 var errClosed = errors.New("log is closed")  // Unexported error
 ```
 
@@ -210,7 +210,7 @@ const (
 
 ## Performance Considerations
 
-- Tests use `MaxDataFileSize = 500` bytes for fast execution
+- Tests use `MaxDataFileSize = 1500` bytes for fast execution
 - Use `t.TempDir()` for test isolation and cleanup
 - Avoid unnecessary allocations in hot paths
 - Use `sync.RWMutex` for concurrent access protection

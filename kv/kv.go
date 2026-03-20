@@ -3,26 +3,27 @@ package kv
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/1garo/kival/log"
 )
 
-const DEFAULT_DB_PATH = "./data"
+const DefaultDBPath = "./data"
 
-var (
-	ErrKeyNotFound = errors.New("key not found in db")
-)
+var ErrKeyNotFound = errors.New("key not found in db")
 
 type KV interface {
 	Put(key []byte, data []byte) error
 	Get(key []byte) ([]byte, error)
 	Del(key []byte) error
+	Merge() error
 }
 
 type kv struct {
 	activeLog log.Log
 	keyDir    map[string]log.LogPosition
 	logs      map[uint32]log.Log
+	dbPath    string
 }
 
 func New(path string) (*kv, error) {
@@ -39,25 +40,27 @@ func New(path string) (*kv, error) {
 		activeLog: activeLog,
 		keyDir:    index,
 		logs:      l,
+		dbPath:    path,
 	}, nil
 }
 
 var _ KV = (*kv)(nil)
 
-// rotateActiveLog rotates the active log file and creates a new one.
+// rotateActiveLog rotates the active log file, appends data, and returns the position.
 func (m *kv) rotateActiveLog(key, data []byte) (log.LogPosition, error) {
 	m.activeLog.MarkReadOnly()
-
-	newLog, err := log.New(m.activeLog.ID()+1, DEFAULT_DB_PATH)
-	if err != nil {
-		return log.LogPosition{}, fmt.Errorf("cannot create a new after capacity exceeded: %v", err)
-	}
 	m.logs[m.activeLog.ID()] = m.activeLog
 
-	m.activeLog = newLog
-	pos, err := m.activeLog.Append(key, data)
+	newLog, err := log.New(m.activeLog.ID()+1, m.dbPath)
 	if err != nil {
-		return log.LogPosition{}, fmt.Errorf("failed to append to rotated log: %v", err)
+		return log.LogPosition{}, fmt.Errorf("cannot create new log: %w", err)
+	}
+
+	m.activeLog = newLog
+
+	pos, err := newLog.Append(key, data)
+	if err != nil {
+		return log.LogPosition{}, fmt.Errorf("failed to append to rotated log: %w", err)
 	}
 
 	return pos, nil
@@ -67,7 +70,6 @@ func (m *kv) Put(key []byte, data []byte) error {
 	pos, err := m.activeLog.Append(key, data)
 	if err != nil {
 		if errors.Is(err, log.ErrCapacityExceeded) {
-			fmt.Println("entrou aqui?")
 			p, err := m.rotateActiveLog(key, data)
 			if err != nil {
 				return err
@@ -104,5 +106,56 @@ func (m *kv) Del(key []byte) error {
 	}
 
 	delete(m.keyDir, string(key))
+	return nil
+}
+
+func (m *kv) Merge() error {
+	if len(m.logs) == 0 {
+		return nil
+	}
+
+	var compactedLog log.Log
+	var err error
+	compactedLog, err = log.New(m.activeLog.ID()+1, m.dbPath)
+	if err != nil {
+		return fmt.Errorf("cannot create new compacted log: %w", err)
+	}
+
+	for key := range m.keyDir {
+		val, err := m.Get([]byte(key))
+		if err != nil {
+			return fmt.Errorf("failed to get value: %w", err)
+		}
+
+		pos, err := compactedLog.Append([]byte(key), val)
+		if err != nil {
+			if errors.Is(err, log.ErrCapacityExceeded) {
+				pos, err = m.rotateActiveLog([]byte(key), val)
+				if err != nil {
+					return err
+				}
+				compactedLog = m.activeLog
+			} else {
+				return fmt.Errorf("failed to append: %w", err)
+			}
+		}
+
+		m.keyDir[key] = pos
+	}
+
+	for _, l := range m.logs {
+		l.MarkReadOnly()
+	}
+
+	m.activeLog = compactedLog
+
+	for id, l := range m.logs {
+		_ = l.Close()
+		filename := fmt.Sprintf("%s/%d.data", m.dbPath, id)
+		_ = os.Remove(filename)
+	}
+
+	m.logs = make(map[uint32]log.Log)
+
 	return nil
 }

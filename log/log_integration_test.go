@@ -278,10 +278,10 @@ func createTestLogFile(t *testing.T, path string, content []byte) {
 func TestAppend_CapacityExceeded(t *testing.T) {
 	l := newTestLog(t)
 
-	// Create a large key-value pair that will consume most of MaxDataFileSize (500 bytes)
+	// Create a large key-value pair that will consume most of MaxDataFileSize
 	// Record size = header(16) + keySize(100) + valueSize(380) = 496 bytes
 	largeKey := make([]byte, 100)
-	largeValue := make([]byte, 380)
+	largeValue := make([]byte, int(log.MaxDataFileSize)-100-int(record.HeaderSize)-20) // fill most of capacity
 
 	// First append should succeed
 	_, err := l.Append(largeKey, largeValue)
@@ -343,7 +343,7 @@ func TestAppend_MultipleRecordsUntilFull(t *testing.T) {
 	}
 
 	assert.Greater(t, recordCount, 0, "should have multiple records")
-	assert.Less(t, l.Size(), int64(500), "should not exceed max capacity")
+	assert.Less(t, l.Size(), int64(log.MaxDataFileSize), "should not exceed max capacity")
 }
 
 func TestMarkReadOnly_PreventsAppend(t *testing.T) {

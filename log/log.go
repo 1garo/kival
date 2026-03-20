@@ -20,8 +20,7 @@ var (
 	ErrLogClosed        = errors.New("log is closed")
 )
 
-// const MaxDataFileSize = 128 * 1024 * 1024 // 128 MB
-const MaxDataFileSize = 500 // 500 Bytes
+var MaxDataFileSize = 1500 // 1.5 KB for faster tests
 
 type Log interface {
 	Append(key, val []byte) (pos LogPosition, err error)
@@ -68,7 +67,11 @@ func Open(path string) (*logFile, Logs, Index, error) {
 	}
 
 	files, _ := filepath.Glob(filepath.Join(path, "*.data"))
-	sort.Strings(files)
+	sort.Slice(files, func(i, j int) bool {
+		id_i := parseFileID(files[i])
+		id_j := parseFileID(files[j])
+		return id_i < id_j
+	})
 
 	index := make(Index)
 	logs := make(Logs)
@@ -165,7 +168,7 @@ func New(id uint32, dir string) (*logFile, error) {
 
 	f, err := os.OpenFile(
 		filepath.Join(dir, fmt.Sprintf("%d.data", id)),
-		os.O_CREATE|os.O_RDWR,
+		os.O_CREATE|os.O_RDWR|os.O_TRUNC,
 		0644,
 	)
 	if err != nil {
@@ -185,13 +188,13 @@ func New(id uint32, dir string) (*logFile, error) {
 	}, nil
 }
 
-// isCapacityExceeded checks if the log file has exceeded its capacity.
-func (d *logFile) isCapacityExceeded(key, val []byte) error {
+// haveExceededCapacity checks if the log file has exceeded its capacity.
+func (d *logFile) haveExceededCapacity(key, val []byte) error {
 	keySize := uint32(len(key))
 	valSize := uint32(len(val))
 
 	recordSize := record.HeaderSize + keySize + valSize
-	if int64(recordSize)+d.writePos > MaxDataFileSize {
+	if int64(recordSize)+d.writePos > int64(MaxDataFileSize) {
 		return ErrCapacityExceeded
 	}
 	return nil
@@ -204,7 +207,7 @@ func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 	}
 	start := d.writePos
 
-	if err := d.isCapacityExceeded(key, val); err != nil {
+	if err := d.haveExceededCapacity(key, val); err != nil {
 		return LogPosition{}, err
 	}
 
