@@ -370,3 +370,5 @@ func TestMarkReadOnly_AllowsReads(t *testing.T) {
 	assert.NoError(t, err, "should allow reads after marking log read-only")
 	assert.Equal(t, value, data, "should return correct data")
 }
+
+// TODO: write tests for sync strategy

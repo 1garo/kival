@@ -14,6 +14,18 @@ import (
 	"github.com/1garo/kival/record"
 )
 
+type (
+	Logs  map[uint32]*logFile
+	Index map[string]LogPosition
+)
+
+type SyncStrategy int
+
+const (
+	Always SyncStrategy = iota
+	EveryN
+)
+
 var (
 	ErrCapacityExceeded = errors.New("capacity exceeded creation failed")
 	ErrReadOnlySegment  = errors.New("file is in readonly state, cannot write to it")
@@ -31,7 +43,7 @@ type Log interface {
 	MarkReadOnly()
 }
 
-// LogPosition
+// LogPosition is the position of the data inside the log files
 type LogPosition struct {
 	FileID    uint32 // which segment file
 	ValuePos  int64  // where the record starts inside that file
@@ -55,29 +67,45 @@ func parseFileID(name string) uint32 {
 	return uint32(id)
 }
 
-type Logs map[uint32]*logFile
-type Index map[string]LogPosition
+// Option type is to configure your log
+type Option func(*logFile) error
+
+// WithSyncStrategy set the sync strategy to the log
+func WithSyncStrategy(s SyncStrategy) Option {
+	return func(lf *logFile) error {
+		lf.syncStrategy = s
+		return nil
+	}
+}
+
+// WithSyncEveryN sync log every N writes
+func WithSyncEveryN(n int32) Option {
+	return func(lf *logFile) error {
+		lf.syncEveryN = n
+		return nil
+	}
+}
 
 // Open recreates the log state from the given path.
 // It goes through all the log files under the given path.
 // It returns the active log file, a map of log files, a map of log positions, and an error.
-func Open(path string) (*logFile, Logs, Index, error) {
-	if err := os.MkdirAll(path, 0755); err != nil {
+func Open(path string, options ...Option) (*logFile, Logs, Index, error) {
+	if err := os.MkdirAll(path, 0o755); err != nil {
 		return nil, nil, nil, err
 	}
 
 	files, _ := filepath.Glob(filepath.Join(path, "*.data"))
 	sort.Slice(files, func(i, j int) bool {
-		id_i := parseFileID(files[i])
-		id_j := parseFileID(files[j])
-		return id_i < id_j
+		idI := parseFileID(files[i])
+		idJ := parseFileID(files[j])
+		return idI < idJ
 	})
 
 	index := make(Index)
 	logs := make(Logs)
 
 	if len(files) == 0 {
-		lf, err := New(1, path)
+		lf, err := New(1, path, options...)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -89,7 +117,7 @@ func Open(path string) (*logFile, Logs, Index, error) {
 	for i, f := range files {
 		id := parseFileID(f)
 
-		lf, err := New(id, path)
+		lf, err := New(id, path, options...)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -111,11 +139,14 @@ func Open(path string) (*logFile, Logs, Index, error) {
 
 // logFile represents a log file.
 type logFile struct {
-	id       uint32
-	file     *os.File
-	writePos int64
-	readOnly bool
-	closed   bool
+	id           uint32
+	file         *os.File
+	writePos     int64
+	writeCount   int32
+	readOnly     bool
+	closed       bool
+	syncStrategy SyncStrategy
+	syncEveryN   int32
 }
 
 // BuildIndex builds an index of keys and their positions in the log file.
@@ -161,15 +192,28 @@ func (d *logFile) BuildIndex(idx map[string]LogPosition) error {
 }
 
 // New creates a new log file
-func New(id uint32, dir string) (*logFile, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
+func New(id uint32, dir string, options ...Option) (*logFile, error) {
+	l := &logFile{
+		id:           id,
+		syncStrategy: Always,
+		syncEveryN:   1,
+	}
+
+	for _, opt := range options {
+		if err := opt(l); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
 
+	fileName := filepath.Join(dir, fmt.Sprintf("%d.data", id))
 	f, err := os.OpenFile(
-		filepath.Join(dir, fmt.Sprintf("%d.data", id)),
+		fileName,
 		os.O_CREATE|os.O_RDWR|os.O_TRUNC,
-		0644,
+		0o644,
 	)
 	if err != nil {
 		return nil, err
@@ -181,11 +225,10 @@ func New(id uint32, dir string) (*logFile, error) {
 		return nil, err
 	}
 
-	return &logFile{
-		file:     f,
-		id:       id,
-		writePos: pos,
-	}, nil
+	l.writePos = pos
+	l.file = f
+
+	return l, nil
 }
 
 // haveExceededCapacity checks if the log file has exceeded its capacity.
@@ -217,8 +260,20 @@ func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 		return LogPosition{}, err
 	}
 
-	if err = d.file.Sync(); err != nil {
-		return LogPosition{}, err
+	d.writeCount++
+
+	switch d.syncStrategy {
+	case Always:
+		if err = d.file.Sync(); err != nil {
+			return LogPosition{}, err
+		}
+	case EveryN:
+		if d.writeCount == d.syncEveryN {
+			if err = d.file.Sync(); err != nil {
+				return LogPosition{}, err
+			}
+		}
+		d.writeCount = 0
 	}
 
 	d.writePos += int64(n)

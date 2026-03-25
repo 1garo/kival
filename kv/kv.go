@@ -1,3 +1,4 @@
+// Package kv is the entry for the database
 package kv
 
 import (
@@ -26,8 +27,9 @@ type kv struct {
 	dbPath    string
 }
 
-func New(path string) (*kv, error) {
-	activeLog, logs, index, err := log.Open(path)
+// New creates a new database or sync based on data into path
+func New(path string, opts ...log.Option) (*kv, error) {
+	activeLog, logs, index, err := log.Open(path, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -66,6 +68,7 @@ func (m *kv) rotateActiveLog(key, data []byte) (log.LogPosition, error) {
 	return pos, nil
 }
 
+// Put add a new key and value to the active log
 func (m *kv) Put(key []byte, data []byte) error {
 	pos, err := m.activeLog.Append(key, data)
 	if err != nil {
@@ -84,6 +87,7 @@ func (m *kv) Put(key []byte, data []byte) error {
 	return nil
 }
 
+// Get get a value from the log based on the key
 func (m *kv) Get(key []byte) ([]byte, error) {
 	pos, ok := m.keyDir[string(key)]
 	if !ok {
@@ -96,6 +100,7 @@ func (m *kv) Get(key []byte) ([]byte, error) {
 	return m.activeLog.ReadAt(pos)
 }
 
+// Del a key from the active log
 func (m *kv) Del(key []byte) error {
 	if _, ok := m.keyDir[string(key)]; !ok {
 		return ErrKeyNotFound
@@ -109,6 +114,7 @@ func (m *kv) Del(key []byte) error {
 	return nil
 }
 
+// Merge merges all the logs in the db into a single log file
 func (m *kv) Merge() error {
 	if len(m.logs) == 0 {
 		return nil
