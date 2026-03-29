@@ -41,6 +41,7 @@ type Log interface {
 	ID() uint32
 	Close() error
 	MarkReadOnly()
+	WriteCount() int32
 }
 
 // LogPosition is the position of the data inside the log files
@@ -272,8 +273,9 @@ func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 			if err = d.file.Sync(); err != nil {
 				return LogPosition{}, err
 			}
+
+			d.writeCount = 0
 		}
-		d.writeCount = 0
 	}
 
 	d.writePos += int64(n)
@@ -320,4 +322,9 @@ func (d *logFile) Close() error {
 // MarkReadOnly marks the current log file as read-only.
 func (d *logFile) MarkReadOnly() {
 	d.readOnly = true
+}
+
+// WriteCount the amount of writes done to this file
+func (d *logFile) WriteCount() int32 {
+	return d.writeCount
 }

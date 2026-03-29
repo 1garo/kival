@@ -1,7 +1,7 @@
 # Milestone 11 — File Sync & Durability Controls
 
 ## Goal
-Add configurable fsync strategy to the log package with three modes: always, every N writes, and never.
+Add configurable fsync strategy to the log package with two modes: always and every N writes.
 
 ## Files to Modify
 
@@ -16,7 +16,6 @@ In `log/log.go`, add a new type and constants:
 - `type SyncStrategy int`
 - `const Always SyncStrategy = iota` (default)
 - `const EveryN SyncStrategy`
-- `const Never SyncStrategy`
 
 ### Step 2: Add fields to logFile struct
 
@@ -34,7 +33,6 @@ Update `New()` to accept optional sync strategy. Suggested: add `SyncStrategy` a
 Replace unconditional `Sync()` call with logic:
 - **Always**: Call `Sync()` every time
 - **EveryN**: Call `Sync()` when `writeCount % syncEveryN == 0`
-- **Never**: Never call `Sync()`
 
 Increment `writeCount` after each append regardless of strategy.
 
@@ -43,7 +41,6 @@ Increment `writeCount` after each append regardless of strategy.
 Add tests for each strategy:
 - `TestAppend_AlwaysSync_SyncsEveryWrite`
 - `TestAppend_EveryNSync_SyncsAtThreshold`
-- `TestAppend_NeverSync_NeverCallsSync`
 - Verify writeCount increments correctly
 
 ## Definition of Done
@@ -51,7 +48,7 @@ Add tests for each strategy:
 - [ ] `SyncStrategy` type and constants defined
 - [ ] `New()` accepts sync strategy configuration
 - [ ] `Append()` respects chosen strategy
-- [ ] Tests pass for all three strategies
+- [ ] Tests pass for both strategies
 - [ ] Existing tests still pass (backward compatible)
 - [ ] `go vet` and `go fmt` pass
 
@@ -59,4 +56,3 @@ Add tests for each strategy:
 
 - Default behavior (Always) matches current implementation — no breaking changes
 - "EveryN" is useful for benchmarks: e.g., sync every 1000 writes
-- "Never" is for extreme performance scenarios where durability is handled externally

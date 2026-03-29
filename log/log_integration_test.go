@@ -16,11 +16,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newTestLog(t *testing.T) log.Log {
+func newTestLog(t *testing.T, opts ...log.Option) log.Log {
 	t.Helper()
 
 	dir := t.TempDir()
-	l, err := log.New(1, dir)
+	l, err := log.New(1, dir, opts...)
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = l.Close() })
@@ -166,7 +166,7 @@ func TestNew_FilePermissions(t *testing.T) {
 	info, err := os.Stat(filePath)
 	require.NoError(t, err)
 
-	assert.Equal(t, os.FileMode(0644), info.Mode().Perm(), "file should have 0644 permissions")
+	assert.Equal(t, os.FileMode(0o644), info.Mode().Perm(), "file should have 0644 permissions")
 }
 
 func TestOpen_EmptyDirectory(t *testing.T) {
@@ -271,7 +271,7 @@ func TestParseFileID_ValidNames(t *testing.T) {
 func createTestLogFile(t *testing.T, path string, content []byte) {
 	t.Helper()
 
-	err := os.WriteFile(path, content, 0644)
+	err := os.WriteFile(path, content, 0o644)
 	require.NoError(t, err)
 }
 
@@ -371,4 +371,34 @@ func TestMarkReadOnly_AllowsReads(t *testing.T) {
 	assert.Equal(t, value, data, "should return correct data")
 }
 
-// TODO: write tests for sync strategy
+func TestAppend_AlwaysSync_SyncsEveryWrite(t *testing.T) {
+	l := newTestLog(t)
+
+	_, err := l.Append([]byte("key"), []byte("value"))
+	require.NoError(t, err)
+
+	assert.EqualValues(t, 1, l.WriteCount())
+}
+
+func TestAppend_EveryNSync_SyncsAtThreshold(t *testing.T) {
+	l := newTestLog(
+		t,
+		log.WithSyncStrategy(log.EveryN),
+		log.WithSyncEveryN(3),
+	)
+
+	_, err := l.Append([]byte("key"), []byte("value"))
+	require.NoError(t, err)
+
+	assert.EqualValues(t, 1, l.WriteCount())
+
+	_, err = l.Append([]byte("key"), []byte("value"))
+	require.NoError(t, err)
+
+	assert.EqualValues(t, 2, l.WriteCount())
+
+	_, err = l.Append([]byte("key"), []byte("value"))
+	require.NoError(t, err)
+
+	assert.EqualValues(t, 0, l.WriteCount())
+}

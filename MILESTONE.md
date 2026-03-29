@@ -205,6 +205,8 @@ Details:
 
 Why: Teaches durability versus performance trade-offs.
 
+- [x] Done
+
 ---
 
 ### Milestone 12 — Basic Metrics & Introspection
