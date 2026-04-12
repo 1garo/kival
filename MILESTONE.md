@@ -223,6 +223,27 @@ Why: Makes system behavior visible and debuggable.
 
 ---
 
+### Milestone v0.1.0 — Basic CRUD Verified
+
+Goal: Verify basic CRUD operations work correctly and persist data.
+
+Details:
+- Added KV package tests:
+  - `TestKV_Put_Get_Basic`
+  - `TestKV_Put_Overwrite`
+  - `TestKV_Get_NotFound`
+  - `TestKV_Del_ExistingKey`
+  - `TestKV_Del_NotFound`
+  - `TestKV_Persistence`
+- Fixed bug in `log.Open` that was truncating existing files
+- Added `openExisting` function to safely reopen log files
+
+Why: Ensures the storage engine is production-ready for use by downstream projects.
+
+- [x] Done
+
+---
+
 ## Testing Strategy
 
 - Unit tests for:

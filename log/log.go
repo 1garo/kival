@@ -118,7 +118,7 @@ func Open(path string, options ...Option) (*logFile, Logs, Index, error) {
 	for i, f := range files {
 		id := parseFileID(f)
 
-		lf, err := New(id, path, options...)
+		lf, err := openExisting(id, path, options...)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -220,7 +220,41 @@ func New(id uint32, dir string, options ...Option) (*logFile, error) {
 		return nil, err
 	}
 
-	// Seek to end — Bitcask always appends.
+	pos, err := f.Seek(0, io.SeekEnd)
+	if err != nil {
+		return nil, err
+	}
+
+	l.writePos = pos
+	l.file = f
+
+	return l, nil
+}
+
+// openExisting opens an existing log file without truncating it.
+func openExisting(id uint32, dir string, options ...Option) (*logFile, error) {
+	l := &logFile{
+		id:           id,
+		syncStrategy: Always,
+		syncEveryN:   1,
+	}
+
+	for _, opt := range options {
+		if err := opt(l); err != nil {
+			return nil, err
+		}
+	}
+
+	fileName := filepath.Join(dir, fmt.Sprintf("%d.data", id))
+	f, err := os.OpenFile(
+		fileName,
+		os.O_RDWR,
+		0o644,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	pos, err := f.Seek(0, io.SeekEnd)
 	if err != nil {
 		return nil, err

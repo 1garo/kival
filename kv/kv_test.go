@@ -40,6 +40,86 @@ func forceRotation(db kv.KV, count int) {
 	}
 }
 
+func TestKV_Put_Get_Basic(t *testing.T) {
+	dir := t.TempDir()
+	db := newTestKV(t, dir)
+
+	err := db.Put([]byte("key1"), []byte("value1"))
+	require.NoError(t, err)
+
+	val, err := db.Get([]byte("key1"))
+	require.NoError(t, err)
+	assert.Equal(t, "value1", string(val))
+}
+
+func TestKV_Put_Overwrite(t *testing.T) {
+	dir := t.TempDir()
+	db := newTestKV(t, dir)
+
+	err := db.Put([]byte("key1"), []byte("value1"))
+	require.NoError(t, err)
+
+	err = db.Put([]byte("key1"), []byte("value2"))
+	require.NoError(t, err)
+
+	val, err := db.Get([]byte("key1"))
+	require.NoError(t, err)
+	assert.Equal(t, "value2", string(val))
+}
+
+func TestKV_Get_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	db := newTestKV(t, dir)
+
+	_, err := db.Get([]byte("nonexistent"))
+	assert.ErrorIs(t, err, kv.ErrKeyNotFound)
+}
+
+func TestKV_Del_ExistingKey(t *testing.T) {
+	dir := t.TempDir()
+	db := newTestKV(t, dir)
+
+	err := db.Put([]byte("key1"), []byte("value1"))
+	require.NoError(t, err)
+
+	err = db.Del([]byte("key1"))
+	require.NoError(t, err)
+
+	_, err = db.Get([]byte("key1"))
+	assert.ErrorIs(t, err, kv.ErrKeyNotFound)
+}
+
+func TestKV_Del_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	db := newTestKV(t, dir)
+
+	err := db.Del([]byte("nonexistent"))
+	assert.ErrorIs(t, err, kv.ErrKeyNotFound)
+}
+
+func TestKV_Persistence(t *testing.T) {
+	dir := t.TempDir()
+
+	db1, err := kv.New(dir)
+	require.NoError(t, err)
+
+	err = db1.Put([]byte("key1"), []byte("value1"))
+	require.NoError(t, err)
+	err = db1.Put([]byte("key2"), []byte("value2"))
+	require.NoError(t, err)
+
+	db2, err := kv.New(dir)
+	require.NoError(t, err)
+
+	val1, err := db2.Get([]byte("key1"))
+	require.NoError(t, err)
+	assert.Equal(t, "value1", string(val1))
+
+	val2, err := db2.Get([]byte("key2"))
+	require.NoError(t, err)
+	assert.Equal(t, "value2", string(val2))
+}
+
 func TestKV_Merge_CreatesCompactedLog(t *testing.T) {
 	dir := t.TempDir()
 	db := newTestKV(t, dir)
