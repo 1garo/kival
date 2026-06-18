@@ -87,7 +87,7 @@ func (m *kv) Put(key []byte, data []byte) error {
 	return nil
 }
 
-// Get get a value from the log based on the key
+// Get a value from the log based on the key
 func (m *kv) Get(key []byte) ([]byte, error) {
 	pos, ok := m.keyDir[string(key)]
 	if !ok {
