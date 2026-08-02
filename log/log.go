@@ -30,6 +30,8 @@ var (
 	ErrCapacityExceeded = errors.New("capacity exceeded creation failed")
 	ErrReadOnlySegment  = errors.New("file is in readonly state, cannot write to it")
 	ErrLogClosed        = errors.New("log is closed")
+	ErrFailedToSync = errors.New("failed to sync file")
+	ErrFailedToWriteFile = errors.New("failed to write file")
 )
 
 var MaxDataFileSize = 1500 // 1.5 KB for faster tests
@@ -41,7 +43,6 @@ type Log interface {
 	ID() uint32
 	Close() error
 	MarkReadOnly()
-	WriteCount() int32
 }
 
 // LogPosition is the position of the data inside the log files
@@ -68,29 +69,10 @@ func parseFileID(name string) uint32 {
 	return uint32(id)
 }
 
-// Option type is to configure your log
-type Option func(*logFile) error
-
-// WithSyncStrategy set the sync strategy to the log
-func WithSyncStrategy(s SyncStrategy) Option {
-	return func(lf *logFile) error {
-		lf.syncStrategy = s
-		return nil
-	}
-}
-
-// WithSyncEveryN sync log every N writes
-func WithSyncEveryN(n int32) Option {
-	return func(lf *logFile) error {
-		lf.syncEveryN = n
-		return nil
-	}
-}
-
 // Open recreates the log state from the given path.
 // It goes through all the log files under the given path.
 // It returns the active log file, a map of log files, a map of log positions, and an error.
-func Open(path string, options ...Option) (*logFile, Logs, Index, error) {
+func Open(path string) (*logFile, Logs, Index, error) {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return nil, nil, nil, err
 	}
@@ -106,7 +88,7 @@ func Open(path string, options ...Option) (*logFile, Logs, Index, error) {
 	logs := make(Logs)
 
 	if len(files) == 0 {
-		lf, err := New(1, path, options...)
+		lf, err := New(1, path)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -118,7 +100,7 @@ func Open(path string, options ...Option) (*logFile, Logs, Index, error) {
 	for i, f := range files {
 		id := parseFileID(f)
 
-		lf, err := openExisting(id, path, options...)
+		lf, err := openExisting(id, path)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -143,7 +125,6 @@ type logFile struct {
 	id           uint32
 	file         *os.File
 	writePos     int64
-	writeCount   int32
 	readOnly     bool
 	closed       bool
 	syncStrategy SyncStrategy
@@ -193,17 +174,11 @@ func (d *logFile) BuildIndex(idx map[string]LogPosition) error {
 }
 
 // New creates a new log file
-func New(id uint32, dir string, options ...Option) (*logFile, error) {
+func New(id uint32, dir string) (*logFile, error) {
 	l := &logFile{
 		id:           id,
 		syncStrategy: Always,
 		syncEveryN:   1,
-	}
-
-	for _, opt := range options {
-		if err := opt(l); err != nil {
-			return nil, err
-		}
 	}
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -232,17 +207,11 @@ func New(id uint32, dir string, options ...Option) (*logFile, error) {
 }
 
 // openExisting opens an existing log file without truncating it.
-func openExisting(id uint32, dir string, options ...Option) (*logFile, error) {
+func openExisting(id uint32, dir string) (*logFile, error) {
 	l := &logFile{
 		id:           id,
 		syncStrategy: Always,
 		syncEveryN:   1,
-	}
-
-	for _, opt := range options {
-		if err := opt(l); err != nil {
-			return nil, err
-		}
 	}
 
 	fileName := filepath.Join(dir, fmt.Sprintf("%d.data", id))
@@ -292,24 +261,11 @@ func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 	buf := record.Encode(key, val)
 	n, err := d.file.WriteAt(buf, d.writePos)
 	if err != nil {
-		return LogPosition{}, err
+		return LogPosition{}, fmt.Errorf("%w: %v", ErrFailedToWriteFile, err)
 	}
 
-	d.writeCount++
-
-	switch d.syncStrategy {
-	case Always:
-		if err = d.file.Sync(); err != nil {
-			return LogPosition{}, err
-		}
-	case EveryN:
-		if d.writeCount == d.syncEveryN {
-			if err = d.file.Sync(); err != nil {
-				return LogPosition{}, err
-			}
-
-			d.writeCount = 0
-		}
+	if err = d.file.Sync(); err != nil {
+		return LogPosition{}, fmt.Errorf("%w: %v", ErrFailedToSync, err)
 	}
 
 	d.writePos += int64(n)
@@ -358,7 +314,3 @@ func (d *logFile) MarkReadOnly() {
 	d.readOnly = true
 }
 
-// WriteCount the amount of writes done to this file
-func (d *logFile) WriteCount() int32 {
-	return d.writeCount
-}

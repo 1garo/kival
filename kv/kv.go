@@ -28,8 +28,8 @@ type kv struct {
 }
 
 // New creates a new database or sync based on data into path
-func New(path string, opts ...log.Option) (*kv, error) {
-	activeLog, logs, index, err := log.Open(path, opts...)
+func New(path string) (*kv, error) {
+	activeLog, logs, index, err := log.Open(path)
 	if err != nil {
 		return nil, err
 	}
@@ -50,10 +50,11 @@ var _ KV = (*kv)(nil)
 
 // rotateActiveLog rotates the active log file, appends data, and returns the position.
 func (m *kv) rotateActiveLog(key, data []byte) (log.LogPosition, error) {
+	currentID := m.activeLog.ID()
 	m.activeLog.MarkReadOnly()
-	m.logs[m.activeLog.ID()] = m.activeLog
+	m.logs[currentID] = m.activeLog
 
-	newLog, err := log.New(m.activeLog.ID()+1, m.dbPath)
+	newLog, err := log.New(currentID+1, m.dbPath)
 	if err != nil {
 		return log.LogPosition{}, fmt.Errorf("cannot create new log: %w", err)
 	}

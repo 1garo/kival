@@ -4,11 +4,10 @@ import (
 	l "log"
 
 	"github.com/1garo/kival/kv"
-	"github.com/1garo/kival/log"
 )
 
 func main() {
-	db, err := kv.New(kv.DefaultDBPath, log.WithSyncEveryN(100))
+	db, err := kv.New(kv.DefaultDBPath)
 	if err != nil {
 		l.Fatalf("failed to open the db: %v", err)
 	}
