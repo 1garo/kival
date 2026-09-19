@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	l "log"
 
 	"github.com/1garo/kival/kv"
@@ -11,6 +12,7 @@ func main() {
 	if err != nil {
 		l.Fatalf("failed to open the db: %v", err)
 	}
+	defer db.Close()
 
 	key := []byte("bar")
 	val := []byte("baz")
@@ -26,13 +28,13 @@ func main() {
 	}
 	l.Printf("data retrieved for %s: %s\n", key, data)
 
-	if err := db.Del(key); err != nil {
+	if err := db.Delete(key); err != nil {
 		l.Fatalf("failed to delete the key=%s: %v", key, err)
 	}
 	l.Println("successfully delete the key")
 
-	if _, err := db.Get(key); err != nil {
-		l.Fatalf("failed to get the key=%s: %v", key, err)
+	if _, err := db.Get(key); !errors.Is(err, kv.ErrKeyNotFound) {
+		l.Fatalf("expected deleted key=%s to be missing, got: %v", key, err)
 	}
 
 	if err := db.Put(key, val); err != nil {

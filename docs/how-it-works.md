@@ -4,26 +4,17 @@ This page explains how Kival opens a database, writes data, rotates log files, a
 
 ## Opening a database
 
-Use `kv.New(path, opts...)` to open or create a database.
+Use `kv.New(path)` to open or create a database. The returned `*kv.DB` owns
+the database files and should be closed when the application is finished with
+it.
 
 ```go
-db, err := kv.New("./data", log.WithSyncEveryN(100))
+db, err := kv.New("./data")
+if err != nil {
+	return err
+}
+defer db.Close()
 ```
-
-`kv.New` passes log options through to the log layer, so the same options apply when Kival opens existing segments or creates a new database.
-
-### Options
-
-- `log.WithSyncStrategy(log.Always)`:
-  - sync after every write
-  - default behavior
-- `log.WithSyncStrategy(log.EveryN)`:
-  - sync after every `N` writes
-- `log.WithSyncEveryN(n)`:
-  - controls how many writes happen before syncing when using `EveryN`
-  - default is `1`
-
-See [`log.New`](../log/log.go) and [`log.Open`](../log/log.go) for the option flow.
 
 ## Writing data
 
@@ -58,7 +49,9 @@ If the key is not present, Kival returns `ErrKeyNotFound`.
 
 ## Deletions
 
-`Del(key)` writes a tombstone record and removes the key from the index.
+`Delete(key)` writes a tombstone record and removes the key from the index.
+`Del(key)` remains as a compatibility alias. Empty values are valid and are
+different from deleted keys.
 
 That tombstone is important during recovery because it prevents older values from being resurrected when the index is rebuilt.
 

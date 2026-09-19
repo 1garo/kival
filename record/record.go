@@ -18,8 +18,18 @@ var (
 )
 
 var (
-	CustomEpoch = 1704067200 // first commit to the projec - 2025-12-04 UTC
-	HeaderSize  = uint32(16) // crc(4) + timestamp(4) + keySize(4) + valSize(4)
+	CustomEpoch = 1704067200 // Unix timestamp for 2024-01-01 00:00:00 UTC.
+	HeaderSize  = uint32(16) // CRC (4) + timestamp (4) + key size (4) + value size (4).
+)
+
+const (
+	// encodedRecordFlag marks records written with the current timestamp format.
+	// It allows recovery to distinguish new empty values from legacy tombstones.
+	encodedRecordFlag = uint32(1 << 31)
+	// tombstoneFlag marks a record as a deletion rather than a stored value.
+	tombstoneFlag = uint32(1 << 30)
+	// timestampMask removes the two format flags, leaving the timestamp bits.
+	timestampMask = ^(encodedRecordFlag | tombstoneFlag)
 )
 
 // Record is the value encoded or decoded from the db
@@ -30,11 +40,21 @@ type Record struct {
 	Key       []byte
 	Value     []byte
 	Timestamp uint32
+	Tombstone bool
 }
 
 // Encode encode the record to be inserted into db
 // TODO: this should return an error too
 func Encode(key, val []byte) []byte {
+	return encode(key, val, false)
+}
+
+// EncodeTombstone encodes a deletion record for key.
+func EncodeTombstone(key []byte) []byte {
+	return encode(key, nil, true)
+}
+
+func encode(key, val []byte, tombstone bool) []byte {
 	greaterThanUint32MAX := len(key) > math.MaxUint32 || len(val) > math.MaxUint32
 	if len(key) == 0 || greaterThanUint32MAX {
 		return []byte{}
@@ -56,7 +76,12 @@ func Encode(key, val []byte) []byte {
 	crc := GenerateCRC(keySize, valSize, key, val)
 	binary.LittleEndian.PutUint32(buf[0:4], crc)
 
-	ts32 := uint32(time.Now().Unix()) - uint32(CustomEpoch)
+	ts32 := (uint32(time.Now().Unix()) - uint32(CustomEpoch)) | encodedRecordFlag
+	if tombstone {
+		// Persist the deletion marker in the timestamp flags so recovery does
+		// not treat this zero-value record as a live empty value.
+		ts32 |= tombstoneFlag
+	}
 	binary.LittleEndian.PutUint32(buf[4:8], ts32)
 
 	return buf
@@ -84,6 +109,9 @@ func Decode(
 
 	crc := binary.LittleEndian.Uint32(header[0:4])
 	timestamp := binary.LittleEndian.Uint32(header[4:8])
+	isEncodedRecord := timestamp&encodedRecordFlag != 0
+	isTombstone := timestamp&tombstoneFlag != 0
+	timestamp &= timestampMask
 	keySize := binary.LittleEndian.Uint32(header[8:12])
 	// record without a key is useless
 	if keySize == 0 {
@@ -134,6 +162,9 @@ func Decode(
 		Key:       key,
 		Value:     val,
 		Timestamp: timestamp,
+		// Records written before the explicit marker format used a zero-length
+		// value as a tombstone. Keep recognizing those records during recovery.
+		Tombstone: isTombstone || (!isEncodedRecord && valSize == 0),
 	}, offset, nil
 }
 

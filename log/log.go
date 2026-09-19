@@ -27,11 +27,12 @@ const (
 )
 
 var (
-	ErrCapacityExceeded = errors.New("capacity exceeded creation failed")
-	ErrReadOnlySegment  = errors.New("file is in readonly state, cannot write to it")
-	ErrLogClosed        = errors.New("log is closed")
-	ErrFailedToSync = errors.New("failed to sync file")
-	ErrFailedToWriteFile = errors.New("failed to write file")
+	ErrCapacityExceeded     = errors.New("capacity exceeded creation failed")
+	ErrReadOnlySegment      = errors.New("file is in readonly state, cannot write to it")
+	ErrLogClosed            = errors.New("log is closed")
+	ErrFailedToSync         = errors.New("failed to sync file")
+	ErrFailedToWriteFile    = errors.New("failed to write file")
+	ErrTombstoneUnsupported = errors.New("log does not support tombstones")
 )
 
 var MaxDataFileSize = 1500 // 1.5 KB for faster tests
@@ -43,6 +44,11 @@ type Log interface {
 	ID() uint32
 	Close() error
 	MarkReadOnly()
+}
+
+// TombstoneAppender is an optional capability for logs that support deletes.
+type TombstoneAppender interface {
+	AppendTombstone(key []byte) (pos LogPosition, err error)
 }
 
 // LogPosition is the position of the data inside the log files
@@ -154,8 +160,7 @@ func (d *logFile) BuildIndex(idx map[string]LogPosition) error {
 
 		offset += bytesRead
 
-		isTombstoneRecord := rec.ValueSize == 0
-		if isTombstoneRecord {
+		if rec.Tombstone {
 			delete(idx, string(rec.Key))
 			continue
 		}
@@ -249,8 +254,14 @@ func (d *logFile) haveExceededCapacity(key, val []byte) error {
 
 // Append appends a key-value pair to the log file.
 func (d *logFile) Append(key, val []byte) (LogPosition, error) {
+	if d.closed {
+		return LogPosition{}, ErrLogClosed
+	}
 	if d.readOnly {
 		return LogPosition{}, ErrReadOnlySegment
+	}
+	if len(key) == 0 {
+		return LogPosition{}, record.ErrEmptyKey
 	}
 	start := d.writePos
 
@@ -276,6 +287,35 @@ func (d *logFile) Append(key, val []byte) (LogPosition, error) {
 		uint32(time.Now().Unix()),
 		start,
 	), nil
+}
+
+// AppendTombstone appends a deletion record for key.
+func (d *logFile) AppendTombstone(key []byte) (LogPosition, error) {
+	if d.closed {
+		return LogPosition{}, ErrLogClosed
+	}
+	if d.readOnly {
+		return LogPosition{}, ErrReadOnlySegment
+	}
+	if len(key) == 0 {
+		return LogPosition{}, record.ErrEmptyKey
+	}
+	if err := d.haveExceededCapacity(key, nil); err != nil {
+		return LogPosition{}, err
+	}
+
+	start := d.writePos
+	buf := record.EncodeTombstone(key)
+	n, err := d.file.WriteAt(buf, d.writePos)
+	if err != nil {
+		return LogPosition{}, fmt.Errorf("%w: %v", ErrFailedToWriteFile, err)
+	}
+	if err := d.file.Sync(); err != nil {
+		return LogPosition{}, fmt.Errorf("%w: %v", ErrFailedToSync, err)
+	}
+
+	d.writePos += int64(n)
+	return NewLogPosition(d.id, 0, uint32(time.Now().Unix()), start), nil
 }
 
 // ReadAt reads a key-value pair from the log file at the given position.
@@ -313,4 +353,3 @@ func (d *logFile) Close() error {
 func (d *logFile) MarkReadOnly() {
 	d.readOnly = true
 }
-

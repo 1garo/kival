@@ -13,22 +13,37 @@ const DefaultDBPath = "./data"
 
 var ErrKeyNotFound = errors.New("key not found in db")
 
-type KV interface {
-	Put(key []byte, data []byte) error
+// Reader reads values from a database.
+type Reader interface {
 	Get(key []byte) ([]byte, error)
+}
+
+// Writer writes and deletes values in a database.
+type Writer interface {
+	Put(key []byte, data []byte) error
+	Delete(key []byte) error
+}
+
+// KV is the legacy database interface. New code should generally use *DB or
+// define a smaller interface containing only the operations it needs.
+type KV interface {
+	Reader
+	Put(key []byte, data []byte) error
 	Del(key []byte) error
 	Merge() error
 }
 
-type kv struct {
+// DB is an opened Kival database.
+type DB struct {
 	activeLog log.Log
 	keyDir    map[string]log.LogPosition
 	logs      map[uint32]log.Log
 	dbPath    string
+	closed    bool
 }
 
 // New creates a new database or sync based on data into path
-func New(path string) (*kv, error) {
+func New(path string) (*DB, error) {
 	activeLog, logs, index, err := log.Open(path)
 	if err != nil {
 		return nil, err
@@ -38,7 +53,7 @@ func New(path string) (*kv, error) {
 	for id, lf := range logs {
 		l[id] = lf
 	}
-	return &kv{
+	return &DB{
 		activeLog: activeLog,
 		keyDir:    index,
 		logs:      l,
@@ -46,10 +61,11 @@ func New(path string) (*kv, error) {
 	}, nil
 }
 
-var _ KV = (*kv)(nil)
+var _ KV = (*DB)(nil)
+var _ Writer = (*DB)(nil)
 
 // rotateActiveLog rotates the active log file, appends data, and returns the position.
-func (m *kv) rotateActiveLog(key, data []byte) (log.LogPosition, error) {
+func (m *DB) rotateActiveLog(key, data []byte) (log.LogPosition, error) {
 	currentID := m.activeLog.ID()
 	m.activeLog.MarkReadOnly()
 	m.logs[currentID] = m.activeLog
@@ -70,7 +86,10 @@ func (m *kv) rotateActiveLog(key, data []byte) (log.LogPosition, error) {
 }
 
 // Put add a new key and value to the active log
-func (m *kv) Put(key []byte, data []byte) error {
+func (m *DB) Put(key []byte, data []byte) error {
+	if m.closed {
+		return log.ErrLogClosed
+	}
 	pos, err := m.activeLog.Append(key, data)
 	if err != nil {
 		if errors.Is(err, log.ErrCapacityExceeded) {
@@ -80,7 +99,7 @@ func (m *kv) Put(key []byte, data []byte) error {
 			}
 			pos = p
 		} else {
-			return fmt.Errorf("cannot append encoded data into db: %v", err)
+			return fmt.Errorf("cannot append encoded data into db: %w", err)
 		}
 	}
 
@@ -89,7 +108,10 @@ func (m *kv) Put(key []byte, data []byte) error {
 }
 
 // Get a value from the log based on the key
-func (m *kv) Get(key []byte) ([]byte, error) {
+func (m *DB) Get(key []byte) ([]byte, error) {
+	if m.closed {
+		return nil, log.ErrLogClosed
+	}
 	pos, ok := m.keyDir[string(key)]
 	if !ok {
 		return nil, ErrKeyNotFound
@@ -102,12 +124,19 @@ func (m *kv) Get(key []byte) ([]byte, error) {
 }
 
 // Del a key from the active log
-func (m *kv) Del(key []byte) error {
+func (m *DB) Delete(key []byte) error {
+	if m.closed {
+		return log.ErrLogClosed
+	}
 	if _, ok := m.keyDir[string(key)]; !ok {
 		return ErrKeyNotFound
 	}
 
-	if _, err := m.activeLog.Append(key, nil); err != nil {
+	appender, ok := m.activeLog.(log.TombstoneAppender)
+	if !ok {
+		return log.ErrTombstoneUnsupported
+	}
+	if _, err := appender.AppendTombstone(key); err != nil {
 		return fmt.Errorf("cannot append encoded data into db: %w", err)
 	}
 
@@ -115,8 +144,16 @@ func (m *kv) Del(key []byte) error {
 	return nil
 }
 
+// Del is kept for compatibility. New code should use Delete.
+func (m *DB) Del(key []byte) error {
+	return m.Delete(key)
+}
+
 // Merge merges all the logs in the db into a single log file
-func (m *kv) Merge() error {
+func (m *DB) Merge() error {
+	if m.closed {
+		return log.ErrLogClosed
+	}
 	if len(m.logs) == 0 {
 		return nil
 	}
@@ -165,4 +202,24 @@ func (m *kv) Merge() error {
 	m.logs = make(map[uint32]log.Log)
 
 	return nil
+}
+
+// Close closes all files owned by the database. It is safe to call once; a
+// second call returns nil so callers can safely defer it.
+func (m *DB) Close() error {
+	if m.closed {
+		return nil
+	}
+	m.closed = true
+
+	var closeErr error
+	if err := m.activeLog.Close(); err != nil {
+		closeErr = errors.Join(closeErr, err)
+	}
+	for _, l := range m.logs {
+		if err := l.Close(); err != nil {
+			closeErr = errors.Join(closeErr, err)
+		}
+	}
+	return closeErr
 }

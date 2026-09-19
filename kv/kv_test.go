@@ -6,16 +6,18 @@ import (
 	"testing"
 
 	"github.com/1garo/kival/kv"
+	"github.com/1garo/kival/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func newTestKV(t *testing.T, dir string) kv.KV {
+func newTestKV(t *testing.T, dir string) *kv.DB {
 	t.Helper()
 	db, err := kv.New(dir)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		if db != nil {
+			_ = db.Close()
 			_ = os.RemoveAll(dir)
 		}
 	})
@@ -33,7 +35,7 @@ func listDataFiles(dir string) []string {
 	return files
 }
 
-func forceRotation(db kv.KV, count int) {
+func forceRotation(db *kv.DB, count int) {
 	val := []byte("this is a long value that will fill the log") // ~43 bytes, ~7-8 per file
 	for i := 0; i < count; i++ {
 		db.Put([]byte("key"+string(rune('a'+i%26))), val)
@@ -110,6 +112,7 @@ func TestKV_Persistence(t *testing.T) {
 
 	db2, err := kv.New(dir)
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = db1.Close(); _ = db2.Close() })
 
 	val1, err := db2.Get([]byte("key1"))
 	require.NoError(t, err)
@@ -118,6 +121,39 @@ func TestKV_Persistence(t *testing.T) {
 	val2, err := db2.Get([]byte("key2"))
 	require.NoError(t, err)
 	assert.Equal(t, "value2", string(val2))
+}
+
+func TestDB_PutEmptyValue_PersistsAcrossReopen(t *testing.T) {
+	dir := t.TempDir()
+
+	db, err := kv.New(dir)
+	require.NoError(t, err)
+	require.NoError(t, db.Put([]byte("empty"), []byte{}))
+	require.NoError(t, db.Close())
+
+	db, err = kv.New(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	value, err := db.Get([]byte("empty"))
+	require.NoError(t, err)
+	assert.Empty(t, value)
+}
+
+func TestDB_DeleteAndClose(t *testing.T) {
+	db, err := kv.New(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	require.NoError(t, db.Put([]byte("key"), []byte("value")))
+	require.NoError(t, db.Delete([]byte("key")))
+	assert.ErrorIs(t, func() error {
+		_, err := db.Get([]byte("key"))
+		return err
+	}(), kv.ErrKeyNotFound)
+
+	require.NoError(t, db.Close())
+	assert.ErrorIs(t, db.Put([]byte("after-close"), []byte("value")), log.ErrLogClosed)
 }
 
 func TestKV_Merge_CreatesCompactedLog(t *testing.T) {

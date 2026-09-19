@@ -63,6 +63,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to open store: %v", err)
 	}
+	defer store.Close()
 
 	fmt.Println("Store loaded.")
 
